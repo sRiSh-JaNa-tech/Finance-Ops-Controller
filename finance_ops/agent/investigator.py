@@ -119,7 +119,8 @@ class BoundedInvestigationAgent:
                     tool_calls_performed=0,
                     tool_call_sequence=[],
                     investigation_hypotheses_tested=["EXACT_MATCH"],
-                    human_review_required=False
+                    human_review_required=False,
+                    investigator="deterministic-fast-path"
                 )
 
         # Dispatch to Gemini Vertex AI Client / Cognitive State Machine

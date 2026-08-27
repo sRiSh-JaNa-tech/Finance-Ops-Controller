@@ -20,7 +20,7 @@ def test_benchmark_execution_fast():
     assert "summary" in results
     assert "Prototype3_GeminiVertexAgent" in results["summary"]
     p3_summary = results["summary"]["Prototype3_GeminiVertexAgent"]
-    assert "f1_score_mean" in p3_summary
-    assert "cost_weighted_utility_mean" in p3_summary
+    assert "match_f1_score" in p3_summary
+    assert "cost_weighted_utility" in p3_summary
     # Confirm legacy alias is GONE — Prototype2 is a separate, retired prototype
     assert "Prototype2_Agent" not in results["summary"]

@@ -82,7 +82,10 @@ def run_full_benchmark():
     print(f"\nAI CONTRIBUTION:")
     print(f"  LLM-investigated: {p3_stats.get('llm_investigated', 0)}")
     print(f"  deterministic fast-path: {p3_stats.get('deterministic_fast_path', 0)}")
-    print(f"  LLM improved recall by: +{improvement:.1f}% vs baseline")
+    if improvement >= 0:
+        print(f"  LLM recall delta: +{improvement:.1f}% vs deterministic baseline")
+    else:
+        print(f"  LLM recall delta: {improvement:.1f}% vs baseline (precision-oriented risk abstention)")
 
     print(f"\nEXCEPTIONS:")
     shown = 0

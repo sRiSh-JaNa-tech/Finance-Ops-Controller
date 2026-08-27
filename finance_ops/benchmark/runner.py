@@ -161,9 +161,9 @@ def run_benchmark(
                             "candidate_count": len(candidates),
                         })
 
-                    # Progress log for Gemini agent
                     tmpl = case.get("template", "SCENARIO")
-                    inv_type = "AI-ReAct" if rec.investigator != "deterministic-cognitive-fallback" else "RuleFallback"
+                    is_ai = bool(rec.investigator and ("gemini" in rec.investigator or "ai" in rec.investigator) and "fallback" not in rec.investigator and "fast-path" not in rec.investigator)
+                    inv_type = "AI-ReAct" if is_ai else ("FastPath" if (rec.investigator and "fast-path" in rec.investigator) else "RuleFallback")
                     print(
                         f"  -> Case {case_num:03d}/{total_cases:03d} [{tmpl:<30}] => "
                         f"{final_dec.decision.value:<9} | {final_dec.reason.value:<28} "

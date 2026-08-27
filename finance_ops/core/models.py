@@ -305,7 +305,7 @@ class AgentRecommendation(BaseModel):
     tool_call_sequence: List[str] = Field(default_factory=list)
     investigation_hypotheses_tested: List[str] = Field(default_factory=list)
     human_review_required: bool = False
-    investigator: str = "gemini-vertex-agent-v3"
+    investigator: str = "deterministic-fast-path"
 
 
 class FinalDecisionRecord(BaseModel):

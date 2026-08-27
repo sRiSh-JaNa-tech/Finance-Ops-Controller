@@ -9,8 +9,8 @@ def test_gemini_api_connectivity():
     """
     client = GeminiReconciliationClient()
     
-    if not client.has_credentials:
-        pytest.skip("GEMINI_API_KEY or VERTEX_API_KEY not set in environment. Skipping API test.")
+    if not client.has_credentials or os.environ.get("RUN_LIVE_LLM_TESTS") != "1":
+        pytest.skip("RUN_LIVE_LLM_TESTS not enabled. Skipping live API network test.")
         
     prompt = "Reply with 'API_OK' and nothing else."
     response = client.call_gemini_api(prompt)

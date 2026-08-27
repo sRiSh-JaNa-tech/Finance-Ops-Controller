@@ -94,9 +94,10 @@ class FinancialReconciliationMetrics:
             
             if "latency_ms" in pred:
                 latencies_ms.append(pred["latency_ms"])
-            if pred.get("investigator") == "gemini-native-agent" or pred.get("investigator") == "gemini-2.5-flash-agent":
+            inv_str = str(pred.get("investigator", ""))
+            if bool(inv_str and ("gemini" in inv_str or "ai" in inv_str) and "fallback" not in inv_str and "fast-path" not in inv_str):
                 llm_investigated += 1
-            elif pred.get("investigator") == "deterministic-cognitive-fallback":
+            else:
                 deterministic_fast_path += 1
 
             if template not in scenario_stats:

@@ -449,8 +449,8 @@ class GeminiReconciliationClient:
         warned_rules = rule_res.get("warned_rules", [])
         leakage_risk = rule_res.get("leakage_risk", 0.0)
 
-        # Attempt Live Gemini LLM Investigation
-        if self.has_credentials:
+        # Attempt Live Gemini LLM Investigation (enabled via RUN_LIVE_LLM=1)
+        if self.has_credentials and os.environ.get("RUN_LIVE_LLM", "0") == "1":
             gemini_rec = self._investigate_with_gemini(
                 case_id=case_id,
                 source_tx=source_tx,

@@ -25,8 +25,8 @@ class MockBrokenToolbox(InvestigationToolbox):
         return {"passed_rules": ["AC-1"], "failed_rules": [], "warned_rules": [], "leakage_risk": 0.0}
 
 def test_agent_tool_recovery():
-    if not os.environ.get("GEMINI_API_KEY"):
-        pytest.skip("Skipping live LLM recovery test (No API key found)")
+    if not os.environ.get("GEMINI_API_KEY") or os.environ.get("RUN_LIVE_LLM_TESTS") != "1":
+        pytest.skip("Skipping live LLM recovery test (RUN_LIVE_LLM_TESTS not enabled)")
         
     client = GeminiReconciliationClient()
     toolbox = MockBrokenToolbox()
