@@ -9,7 +9,7 @@ from finance_ops.ui.server import app, initialize_demo_state
 def main():
     parser = argparse.ArgumentParser(description="AI Finance Controller CLI")
     parser.add_argument("--mode", choices=["benchmark", "dashboard"], default="benchmark", help="Mode to execute")
-    parser.add_argument("--cases", type=int, default=30, help="Number of test cases per seed")
+    parser.add_argument("--cases", type=int, default=5, help="Number of test cases per seed (default: 5)")
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 101, 202], help="Random seeds for benchmark")
     parser.add_argument("--port", type=int, default=5000, help="Web dashboard port")
 

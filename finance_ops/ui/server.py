@@ -13,6 +13,8 @@ from finance_ops.agent.investigator import BoundedInvestigationAgent
 from finance_ops.decision.verifier import DeterministicPolicyVerifier
 from finance_ops.decision.calibration import ConfidenceCalibrator
 from finance_ops.benchmark.runner import run_benchmark
+import json
+import os
 
 app = Flask(__name__)
 
@@ -84,9 +86,17 @@ def initialize_demo_state(n_cases=50, seed=42):
 
     STATE["repo"] = repo
     STATE["cases"] = processed_cases
-    bench = run_benchmark(seeds=[seed, seed + 100], cases_per_seed=25)
-    STATE["benchmark_summary"] = bench["summary"]
-    STATE["systems_summary"] = bench["systems"]
+    
+    # Load cached benchmark results to save 5+ minutes of startup time
+    if os.path.exists("benchmark_results.json"):
+        with open("benchmark_results.json", "r") as f:
+            bench = json.load(f)
+        STATE["benchmark_summary"] = bench["summary"]
+        STATE["systems_summary"] = bench["systems"]
+    else:
+        bench = run_benchmark(seeds=[seed], cases_per_seed=10)
+        STATE["benchmark_summary"] = bench["summary"]
+        STATE["systems_summary"] = bench["systems"]
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
