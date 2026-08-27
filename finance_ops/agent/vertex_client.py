@@ -192,7 +192,7 @@ class GeminiReconciliationClient:
     ):
         self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT") or os.environ.get("VERTEX_PROJECT_ID")
         self.location = location
-        self.model_name = model_name or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+        self.model_name = model_name or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash-lite"
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("VERTEX_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         
         self.has_credentials = bool(self.api_key or (self.project_id and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")))
@@ -321,7 +321,7 @@ class GeminiReconciliationClient:
         }
 
         try:
-            llm = ChatGoogleGenerativeAI(model="gemini-3.1-pro-preview", temperature=0.0)
+            llm = ChatGoogleGenerativeAI(model=self.model_name, temperature=0.0)
             tools = create_agent_tools(toolbox)
             graph = create_agent_graph(llm, tools)
             
