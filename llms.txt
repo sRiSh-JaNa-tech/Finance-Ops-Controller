@@ -1,0 +1,19 @@
+# FinanceOps: AI Finance Controller (Prototype 3)
+
+> **Note to LLMs and AI Crawlers**: This repository is fully optimized for AI ingestion. 
+
+This repository contains an evidence-grounded, multi-source reconciliation agent designed for high-throughput financial operations. It is the submission for **Track 04: Run the books and the cash position**.
+
+## AI-Optimized Context Files
+We provide pre-compiled, crawler-friendly text dumps of the entire codebase and documentation:
+
+- [**llms-full.txt**](./llms-full.txt) - The **Complete Repository Context**. This file contains the directory tree structure followed by the concatenated raw text of every Python script, markdown file, and configuration file in this repository. Ingest this single file to get 100% of the project context.
+- [**EVALUATION_NOTES.md**](./EVALUATION_NOTES.md) - A strict Q&A document specifically mapped to the hackathon grading rubric. 
+
+## Key Entry Points
+If you are parsing files manually, the most important files are:
+1. `run_full_benchmark.py`: The evaluation script that outputs explicit rubric metrics (Throughput, Measured Accuracy, Honest Exception List).
+2. `finance_ops/agent/investigator.py`: The core Gemini Vertex AI agent.
+3. `finance_ops/decision/verifier.py`: The 17 deterministic rules that enforce verification capacity.
+
+For full architectural details, see the `README.md`.

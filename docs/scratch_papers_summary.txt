@@ -1,0 +1,188 @@
+FILE: A Semantic Model for Enhancing Data-Driven Open Banking Services.pdf
+META_TITLE: A Semantic Model for Enhancing Data-Driven Open Banking Services
+PREVIEW: Citation: Paneque, M.; Roldán-García, M.d.M.; García-Nieto, J. A Semantic Model for Enhancing Data-Driven Open Banking Services. Appl. Sci. 2023, 13, 1447. https:// doi.org/10.3390/app13031447 Academic Editor: Lina Soualmia Received: 30 November 2022 Revised: 13 January 2023 Accepted: 18 January 2023 Published: 21 January 2023 Copyright: © 2023 by the authors. Licensee MDPI, Basel, Switzerland. Th
+============================================================
+FILE: A qualitative approach to evaluate the reconciliation of GOLDX and OneGram in Islamic Finance.pdf
+META_TITLE: A qualitative approach to evaluate the reconciliation of GOLDX and OneGram in Islamic Finance
+PREVIEW: Marwan Mohamed Abdeldayem et al. • A qualitative approach to evaluate the reconciliation...  Zb. rad. Ekon. fak. Rij. • 2021 • vol. 39 • no. 1 • 113-134	 113 Original scientific paper UDC: 336.74-021.131(1-69 Islam) https://doi.org/10.18045/zbefri.2021.1.113 A qualitative approach to evaluate the  reconciliation of GOLDX and OneGram in  Islamic Finance* Marwan Mohamed Abdeldayem1, Saeed Hameed Al 
+============================================================
+FILE: AI-Driven Workflow Automation for Installation, Validation, and Payment Reconciliation.pdf
+META_TITLE: 
+PREVIEW: AI-Driven Workflow Automation for Installation,  Validation, and Payment Reconciliation  Authors  Daniel P. Richardson  Sophia M. Bennett  Kevin J. Walker  Lauren T. Hughes  Charles Paul  Abstract  The rapid evolution of artificial intelligence has significantly transformed enterprise operations,  particularly in workflow automation across installation, validation, and payment reconciliation  proc
+============================================================
+FILE: AI-Enabled Installation Management Platforms for Accelerating the Order-.pdf
+META_TITLE: 
+PREVIEW: AI-Enabled Installation Management  Platforms for Accelerating the Order- to-Cash Cycle: The SurePath  Framework    Johnson Oyeniyi  Date; 12/03/2026  Abstract  The acceleration of enterprise revenue realization increasingly depends on the efficiency of  operational workflows that connect service delivery with financial processes. In industries such as  telecommunications, energy, infrastructure s
+============================================================
+FILE: Achieving Financial Certainty- A Unified Ledger Integrity System.pdf
+META_TITLE: 
+PREVIEW: The Eastasouth Journal of Information System and Computer Science  Vol. 1, No. 01, August, pp. 132 - 143          Journal homepage: https://esj.eastasouth-institute.com/index.php/esiscs    Achieving Financial Certainty: A Unified Ledger Integrity System  for Automated, End-to-End Reconciliation  Surender Kusumba  Trinamix Inc., USA  Article Info    ABSTRACT   Article history:  Received Aug, 2023  
+============================================================
+FILE: Advanced Multi-Agent AI Systems for Autonomous Reconciliation Across Enterprise Multi-Counterparty Derivatives, Collateral, and Accounting Platforms.pdf
+META_TITLE: 
+PREVIEW:   653  International Journal of Finance (IJFIN)  Vol. 36, No. 6, November December, 2023 pp. 653-674.  ISSN: 1041-2743  DOI: https://doi.org/10.5281/zenodo.17776545  website: www.ijfin.com    Advanced Multi-Agent AI Systems for Autonomous  Reconciliation Across Enterprise Multi-Counterparty  Derivatives, Collateral, and Accounting Platforms  Appa Rao Nagubandi  Lead Software Engineer, USA.  ORCID 
+============================================================
+FILE: American Journal of Advanced Technology and Engineering Solutions.pdf
+META_TITLE: 
+PREVIEW: American Journal of Advanced Technology and Engineering Solutions, June 2022, 174-210  174        Advanced Financial Data Analytics for Anomaly Detection and Pattern  Discovery in Large-Scale Financial Data Pipelines    Tanjina Binte Sohrab1; Sazzadul Islam2;            Doi: 10.63125/g1cdm484  Received: 09 March 2022; Revised: 10 April 2022; Accepted: 12 May 2022; Published: 11 June 2022  Abstract
+============================================================
+FILE: American Journal of Data Science and Analytics.pdf
+META_TITLE: 
+PREVIEW: American Journal of Data Science and Analytics, December 2024, 314-354  314        Machine Learning Models for Bank Reconciliation Anomaly  Detection in High-Volume Financial Transactions    Mst Shurovi Akter1;          Doi: 10.63125/mmwb6467  Received: 14 September 2024; Revised: 21 October 2024; Accepted: 20 November 2024; Published: 08 December 2024;  Abstract  This study examined the role of m
+============================================================
+FILE: Artificial Intelligence Across the Application Landscape- A Cross-Sectoral Synthesis of Methods, Domains, and Emerging.pdf
+META_TITLE: 
+PREVIEW: Annals of Applied Sciences    Annal. App. Sci, 2026  https://annalsofappliedsciences.com    Vol 7(1) 2026      Short Article    1   This article is an open access article distributed under the terms and conditions of  the Creative Commons Attribution (CC BY) license (https://creativecommons.org/licenses/by/4.0/)   Artificial Intelligence Across the Application Landscape: A  Cross-Sectoral Synthesi
+============================================================
+FILE: Automating Financial Reconciliation- Leveraging RPA for Efficiency and Accuracy in Banking Operations.pdf
+META_TITLE: Automating Financial Reconciliation: Leveraging RPA for Efficiency and Accuracy in Banking Operations
+PREVIEW: Automating Financial Reconciliation: Leveraging RPA for Efficiency and Accuracy in Banking Operations Elheme Azemi1,*,†, Saimir Bala2,3,‡ 1Raiffeisen Bank Kosovo, Prishtinë, Kosovë 2Humboldt-Universität zu Berlin, Berlin, Germany 3SAP Signavio SE, Berlin, Germany Abstract Financial reconciliation is a critical process in banking operations, ensuring the accuracy and integrity of financial data. Tr
+============================================================
+FILE: Automation and Machine Learning in Payment Processing Systems-A Systematic Review.pdf
+META_TITLE: 
+PREVIEW: Automation and Machine Learning in Payment  Processing Systems:A Systematic Review Pradeep Kumar Tiwari  Independent Researcher Journal of Science, Technology and Social Transformation   Journal of Science, Technology and Social Transformation	 Volume 2, Issue 01, 2026 Abstract The convergence of automation technologies and machine learning (ML) within payment processing systems represents  one of
+============================================================
+FILE: Blocking Techniques for efficient Entity Resolution over large, highly heterogeneous Information Spaces.pdf
+META_TITLE: 
+PREVIEW:     Blocking Techniques  for efficient Entity Resolution  over large, highly heterogeneous Information Spaces            Von der Fakultät für Elektrotechnik und Informatik  der Gottfried Wilhelm Leibniz Universität Hannover  zur Erlangung des Grades          DOKTOR DER NATURWISSENSCHAFTEN  Dr. rer. nat.              genehmigte Dissertation  von    Dipl. Ing. Georgios Papadakis    geboren am 2. Jul
+============================================================
+FILE: CoDetect- Financial Fraud Detection With Anomaly Feature Detection.pdf
+META_TITLE: CoDetect: Financial Fraud Detection With Anomaly Feature Detection
+PREVIEW: Received January 25, 2018, accepted March 3, 2018, date of publication March 26, 2018, date of current version April 23, 2018. Digital Object Identifier 10.1109/ACCESS.2018.2816564 CoDetect: Financial Fraud Detection With Anomaly Feature Detection DONGXU HUANG , DEJUN MU, LIBIN YANG , AND XIAOYAN CAI School of Automation, Northwestern Polytechnical University, Xi’an, 710072, China Corresponding au
+============================================================
+FILE: Conceptual Framework for Improving Bank Reconciliation Accuracy Using Intelligent Audit Controls.pdf
+META_TITLE: 
+PREVIEW:  Journal of Frontiers in Multidisciplinary Research   www.multidisciplinaryfrontiers.com            57 | P a g e       Conceptual Framework for Improving Bank Reconciliation Accuracy Using  Intelligent Audit Controls    Sandra Orobosa Ikponmwoba 1*, Onyeka Kelvin Chima 2, Onyinye Jacqueline Ezeilo 3, Benjamin Monday Ojonugwa 4,  Akoche Ochefu 5, Michael Olumuyiwa Adesuyi 6  1 Independent Researche
+============================================================
+FILE: DIGITAL RECEIPTS OF ONLINE TRANSACTIONS IN THE RECONCILIATION PROCESS AND THE PREPARATION OF FINANCIAL REPORTS.pdf
+META_TITLE: 
+PREVIEW: Journal of Indonesian Economy and Business  Volume 36, Number 1, 2021, 31 – 50  ISSN 2085-8272 (print), ISSN 2338-5847 (online)  http://journal.ugm.ac.id/jieb  DIGITAL RECEIPTS OF ONLINE TRANSACTIONS IN THE  RECONCILIATION PROCESS AND THE PREPARATION OF  FINANCIAL REPORTS  Ferry Kosadi1*, Wajib Ginting1, and Vina Merliana1  1 Accounting, Sekolah Tinggi Ilmu Ekonomi Indonesia Membangun (Inaba), Ban
+============================================================
+FILE: Deep Entity Matching- Challenges and Opportunities.pdf
+META_TITLE: JDIQ1301-01
+PREVIEW: 1 Deep Entity Matching: Challenges and Opportunities YULIANG LI, JINFENG LI, YOSHIHIKO SUHARA, JIN WANG, WATARU HIROTA, and WANG-CHIEW TAN, Megagon Labs Entity matching refers to the task of determining whether two different representations refer to the same real- world entity. It continues to be a prevalent problem for many organizations where data resides in different sources and duplicates the 
+============================================================
+FILE: Detecting Errors in Financial Data- A Multi-Agent LLM and Synthetic Data Approach.pdf
+META_TITLE: Detecting Errors in Financial Data: A Multi-Agent LLM and Synthetic Data Approach
+PREVIEW: Detecting Errors in Financial Data: A Multi-Agent LLM and Synthetic Data Approach by Katherine Liu B.S. Computer Science and Engineering MIT, 2025 Submitted to the Department of Electrical Engineering and Computer Science in partial fulfillment of the requirements for the degree of MASTER OF ENGINEERING IN ELECTRICAL ENGINEERING AND COMPUTER SCIENCE at the MASSACHUSETTS INSTITUTE OF TECHNOLOGY May
+============================================================
+FILE: ENGINEERING AND TECHNOLOGY RESEARCH.pdf
+META_TITLE: 
+PREVIEW:       IJETR              IAEME Publication  Chennai, India  editor@iaeme.com/ iaemedu@gmail.com  https://iaeme.com/Home/journal/IJETR  INTERNATIONAL JOURNAL OF  ENGINEERING AND TECHNOLOGY RESEARCH  
+============================================================
+FILE: ENTERPRISE RECONCILIATION ARCHITECTURES FOR FINANCIALLY CRITICAL PLATFORM TRANSITIONS- A FRAMEWORK FOR ACCURACY AND CONTROL DURING SYSTEM REPLACEMENT.pdf
+META_TITLE: ENTERPRISE RECONCILIATION ARCHITECTURES FOR FINANCIALLY CRITICAL PLATFORM TRANSITIONS: A FRAMEWORK FOR ACCURACY AND CONTROL DURING SYSTEM REPLACEMENT
+PREVIEW:             JCET  JOURNAL OF COMPUTER  ENGINEERING AND  TECHNOLOGY  https://iaeme.com/Home/journal/JCET  Journal ID: 3947-1078  
+============================================================
+FILE: Edinburgh Research Explorer.pdf
+META_TITLE: 
+PREVIEW:           Edinburgh Research Explorer                                                                            Data Wrangling for Big Data: Challenges and Opportunities Citation for published version: Furche, T, Gottlob, G, Libkin, L, Orsi, G & Paton, NW 2016, Data Wrangling for Big Data: Challenges and Opportunities. in Advances in Database Technology — EDBT 2016: Proceedings of the 19th Intern
+============================================================
+FILE: Empirical Advances in Applied Artificial Intelligence Across.pdf
+META_TITLE: 
+PREVIEW: Spectrum of Research  Vol 6 issue 1 2026  https://spectrumofresearch.com      1    Empirical Advances in Applied Artificial Intelligence Across  Domains: A Cross-Sectoral Review of Methods, Evaluation  Practices, and Emerging Trends  Madison R. Holloway  Department of Computer Science, University of Minnesota Twin Cities, Minneapolis, Minnesota, USA  Corresponding Email: rholloway.madison@gmail.co
+============================================================
+FILE: Entity Linking Meets Deep Learning- Techniques and Solutions.pdf
+META_TITLE: 
+PREVIEW: arXiv:2109.12520v1  [cs.CL]  26 Sep 2021 IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, 2021 1 Entity Linking Meets Deep Learning: Techniques and Solutions Wei Shen, Yuhan Li, Yinan Liu, Jiawei Han, Fellow, IEEE, Jianyong Wang, Fellow, IEEE, Xiaojie Yuan Abstract—Entity linking (EL) is the process of linking entity mentions appearing in web text with their corresponding entities in a knowled
+============================================================
+FILE: Entity Resolution on Historical Knowledge Graphs.pdf
+META_TITLE: 
+PREVIEW: Utrecht University Repository Title Entity Resolution on Historical Knowledge Graphs Authors Baas, Jurian Publication Date 2023-10-16 Link https://dspace.library.uu.nl/handle/1874/431587 Citation Baas, J 2023, 'Entity Resolution on Historical Knowledge Graphs', Doctor of Philosophy, Universiteit Utrecht, Utrecht. https://doi.org/10.33540/1933 Versions / License Publisher version Rights https://www
+============================================================
+FILE: FINTECH TRANSFORMATION- AI AND RPA BOTS FOR MULTI-AGENCY.pdf
+META_TITLE: 
+PREVIEW: International Journal of Applied Mathematics   Volume 38 No. 10s, 2025   ISSN: 1311-1728 (printed version); ISSN: 1314-8060 (on-line version)     Received: August 05, 2025   304  FINTECH TRANSFORMATION: AI AND RPA BOTS FOR MULTI-AGENCY  PAYMENT RECONCILIATION IN ERP    Sravanthi Gondia, Harsh Parnerkarb, Kishore Subramanya Hebbarc                 aPeopleSoft Consultant, Saicon Inc Frisco, Texas, U
+============================================================
+FILE: Financial Data Science- Challenges and Opportunities.pdf
+META_TITLE: Financial Data Science:  Challenges and Opportunities
+PREVIEW: Financial Data Science: Challenges and Opportunities Dissertation zur Erlangung der naturwissenschaftlichen Doktorwürde (Dr. sc. nat.) vorgelegt der Mathematisch-naturwissenschaftlichen Fakultät der Universität Zürich von Fernando de Meer Pardo aus Spanien Promotionskommission Prof. Dr. Kurt Stockinger Prof. Dr. Jan Dirk Wegner Prof. Dr. Michael Hanspeter Böhlen Zürich, 2025 
+============================================================
+FILE: Finding duplicate offers in the online marketplace catalogue using transformer based methods.pdf
+META_TITLE: 
+PREVIEW: CLNS – Cloud and Network Infrastructure, EIT Digital Master’s Degree Project, 30hp Finding duplicate offers in the  online marketplace catalogue using  transformer based methods An exploration of transformer based methods for the task of  entity resolution ROBERT-ANDREI DAMIAN Stockholm, Sverige  
+============================================================
+FILE: Gyanshauryam, International Scientific Refereed Research Journal.pdf
+META_TITLE: Gyanshauryam, International Scientific Refereed Research Journal
+PREVIEW: Copyright: © the author(s), This is an open-access article distributed under the terms of the Creative Commons Attribution  Non-Commercial License.    Gyanshauryam, International Scientific Refereed Research Journal  © 2022 GISRRJ | Volume 5 | Issue 3  | ISSN : 2582-0095          185    Reengineering Enterprise Search Platforms Using Elastic Search Indexing  Enhancements and Adaptive Query Strateg
+============================================================
+FILE: Hierarchical Matching Network for Heterogeneous Entity Resolution.pdf
+META_TITLE: Hierarchical Matching Network for Heterogeneous Entity Resolution
+PREVIEW: Hierarchical Matching Network for Heterogeneous Entity Resolution Cheng Fu1,3∗, Xianpei Han1,2∗, Jiaming He4 and Le Sun1,2 1Chinese Information Processing Laboratory, Institute of Software, Chinese Academy of Sciences 2State Key Laboratory of Computer Science, Institute of Software, Chinese Academy of Sciences 3University of Chinese Academy of Sciences 4Brandeis University {fucheng, xianpei, sunle
+============================================================
+FILE: Hybrid detection of fuzzy duplicate texts-.pdf
+META_TITLE: UDK 62-83
+PREVIEW: Zabolotnia T. M., Kozynets N. V.           /          Applied Aspects of Information Technology                                                                                    2025; Vol.8 No.1: 48–61  48    Computer science and software engineering  ISSN 2617-4316 (Print)  ISSN 2663-7723 (Online)    DOI: https://doi.org/10.15276/aait.08.2025.4  UDC 004.91  Hybrid detection of fuzzy duplicate te
+============================================================
+FILE: In-context Clustering-based Entity Resolution with Large Language Models- A Design Space Exploration.pdf
+META_TITLE:  In-context Clustering-based Entity Resolution with Large Language Models: A Design Space Exploration 
+PREVIEW: In-context Clustering-based Entity Resolution with Large Language Models: A Design Space Exploration JIAJIE FU, Zhejiang University, China HAITONG TANG, Zhejiang University, China ARIJIT KHAN, Bowling Green State University, USA and Aalborg University, Denmark SHARAD MEHROTRA, University of California, Irvine, USA XIANGYU KE, Zhejiang University, China YUNJUN GAO, Zhejiang University, China Entity
+============================================================
+FILE: International Journal of Scientific Interdisciplinary Research.pdf
+META_TITLE: 
+PREVIEW: International Journal of Scientific Interdisciplinary Research, February 2026, 37-71    37        AI-Based Revenue Leakage Detection Models Using Transaction- Level Financial Data: A Review     Md. Fardous1;  Doi: 10.63125/5h2n0g69  Received: 24 November 2025; Revised: 21 December 2025; Accepted: 17 January 2026; Published: 09 February 2026  Abstract  AI-based revenue leakage detection using trans
+============================================================
+FILE: Machine Learning Platform Revenue Recognition- Computational Optimization of IFRS 15 Implementation in Cloud-Based AI Service Architectures.pdf
+META_TITLE: Machine Learning Platform Revenue Recognition: Computational Optimization of IFRS 15 Implementation in Cloud-Based AI Service Architectures
+PREVIEW: Machine Learning Platform Revenue Recognition: Computational Optimization of IFRS 15 Implementation in Cloud-Based AI Service Architectures Dongwu Lin∗ School of Accounting Guangzhou College of Technology and Business Guangzhou, Guangdong, China lindw3986@gmail.com Abstract This paper develops computational methods for optimizing rev- enue recognition in machine learning platforms operating on clo
+============================================================
+FILE: Machine Learning and Deep Learning Based Entity Resolution Approaches for Unstructured References.pdf
+META_TITLE: Machine Learning and Deep Learning Based Entity Resolution Approaches for Unstructured References
+PREVIEW: University of Arkansas Little Rock  University of Arkansas Little Rock  ScholarHub@UALittleRock  ScholarHub@UALittleRock  Theses and Dissertations  8-17-2020  Machine Learning and Deep Learning Based Entity Resolution  Machine Learning and Deep Learning Based Entity Resolution  Approaches for Unstructured References  Approaches for Unstructured References  Xinming Li  Follow this and additional wo
+============================================================
+FILE: Machop- an End-to-End Generalized Entity Matching Framework.pdf
+META_TITLE: Machop: an End-to-End Generalized Entity Matching Framework
+PREVIEW: Machop: an End-to-End Generalized Entity Matching Framework Jin Wang jin@megagon.ai Megagon Labs United States Yuliang Li yuliang@megagon.ai Megagon Labs United States Wataru Hirota wataru@megagon.ai Megagon Labs United States Eser Kandogan eser@megagon.ai Megagon Labs United States ABSTRACT Real-world applications frequently seek to solve a general form of the Entity Matching (EM) problem to find
+============================================================
+FILE: Making Artificial Intelligence Work for Investigative Journalism.pdf
+META_TITLE: 
+PREVIEW: Full Terms & Conditions of access and use can be found at https://www.tandfonline.com/action/journalInformation?journalCode=rdij20 Digital Journalism ISSN: 2167-0811 (Print) 2167-082X (Online) Journal homepage: https://www.tandfonline.com/loi/rdij20 Making Artificial Intelligence Work for Investigative Journalism Jonathan Stray To cite this article: Jonathan Stray (2019): Making Artificial Intelli
+============================================================
+FILE: Merchant Attribution in Financial Transaction Data- A Data Science Approach to Transaction Enrichment and Brand Recognition.pdf
+META_TITLE: 
+PREVIEW: Sarcouncil Journal of Engineering and Computer Sciences      ISSN(Online): 2945-3585        186    Copyright © 2022 The Author(s): This work is licensed under a Creative Commons Attribution- NonCommercial-NoDerivatives 4.0  (CC BY-NC-ND 4.0) International License  *Corresponding Author: Shivam Tiwari  DOI- https://doi.org/10.5281/zenodo.15818431  Augie, M.A. et al.,.  Volume- 04| Issue- 7| 2025  R
+============================================================
+FILE: Microsoft Word - finalmay08 for pdf.docx.pdf
+META_TITLE: Microsoft Word - finalmay08 for pdf.docx
+PREVIEW: Electronic copy available at: http://ssrn.com/abstract=923582 MARKET REACTION TO AND VALUATION OF IFRS  RECONCILIATION ADJUSTMENTS:   FIRST EVIDENCE FROM THE UK            Joanne Horton  j.horton@lse.ac.uk   London School of Economics  Department of Accounting   London WC2A 2AE UK       George Serafeim  gserafeim@hbs.edu   Harvard University  Graduate School of Business  Boston 02163 MA USA       
+============================================================
+FILE: NBER WORKING PAPER SERIES.pdf
+META_TITLE: 
+PREVIEW: NBER WORKING PAPER SERIES DEEP LEARNING FOR ECONOMISTS Melissa Dell Working Paper 32768 http://www.nber.org/papers/w32768 NATIONAL BUREAU OF ECONOMIC RESEARCH 1050 Massachusetts Avenue Cambridge, MA 02138 August 2024 I would like to thank four anonymous referees, the editor, and Jake Carlson for their helpful  comments and suggestions. Yiyang Chen provided excellent research assistance. The views 
+============================================================
+FILE: Natural Language Processing-Based Layered Reconciliation System for Financial Transaction.pdf
+META_TITLE: 
+PREVIEW:   https://doi.org/10.56038/oprd.v7i1.695    Online ISSN: 2980-020X  https://journals.orclever.com/oprd  30    Conference Article  Natural Language Processing-Based Layered  Reconciliation System for Financial Transaction  Analysis   Dilara Hazırlar1, Özlem Avcı2, Mesut Tekir3, Buket Doğan4*  1 Elekse Elektronik Para ve Ödeme Kuruluşu Ar-Ge Merkezi, Orcid ID: https://orcid.org/0009-0002-0563- 0776,
+============================================================
+FILE: OpenSanctions Pairs- Large-Scale Entity Matching with LLMs.pdf
+META_TITLE: OpenSanctions Pairs: Large-Scale Entity Matching with LLMs
+PREVIEW: OpenSanctions Pairs: Large-Scale Entity Matching with LLMs Chandler Smith * 1 Magnus Sesodia * 1 Friedrich Lindenberg 2 Christian Schroeder de Witt 1 Abstract We release OpenSanctions Pairs, a large-scale en- tity matching benchmark derived from real-world international sanctions aggregation and analyst deduplication. The dataset contains 755,540 la- beled pairs spanning 293 heterogeneous sources 
+============================================================
+FILE: Progressive Entity Matching via Cost Benefit Analysis.pdf
+META_TITLE: Progressive Entity Matching via Cost Benefit Analysis
+PREVIEW: Received November 29, 2021, accepted December 28, 2021, date of publication December 31, 2021, date of current version January 12, 2022. Digital Object Identifier 10.1109/ACCESS.2021.3139987 Progressive Entity Matching via Cost Benefit Analysis CHENCHEN SUN 1,2, ZHIJIANG HOU3, DERONG SHEN4, (Member, IEEE), AND TIEZHENG NIE4 1Key Laboratory of Computer Vision and System (Ministry of Education), Tia
+============================================================
+FILE: PyResolveMetrics- A Standards-Compliant and Efficient Approach to Entity Resolution Metrics.pdf
+META_TITLE: 
+PREVIEW: PyResolveMetrics: A Standards-Compliant and Efficient Approach to Entity Resolution Metrics Andrei Olar a and Laura Dios¸an b Faculty of Mathematics and Computer Science, Babes¸-Bolyai University, Romania Keywords: Entity Resolution, Metrics, Library, Open Source, Standards-Compliant, Theoretical Model, Efficiency. Abstract: Entity resolution, the process of discerning whether multiple data refer 
+============================================================
+FILE: Record Linkage for Official Statistics- Establishment Level Matching in Portuguese Administrative Data.pdf
+META_TITLE: 
+PREVIEW: Record Linkage for Official Statistics: Establishment Level Matching in Portuguese Administrative Data Daniela Filipa Simões Lopes Dissertation Master in Modeling, Data Analysis and Decision Support Systems Supervised by: Professor Fernando Silva Co-supervised by: Professor Marta Silva 2026 
+============================================================
+FILE: Self-Regulatory Mechanisms of Online Platforms.pdf
+META_TITLE: 
+PREVIEW:             Master’s Degree programme  in    Language and Management to China    Final Thesis      Self-Regulatory Mechanisms of Online Platforms  Against Counterfeiting: A Case Study of Alibaba            Supervisor  Renzo Riccardo Cavalieri  Assistant supervisor  Elisa Barbieri    Graduand  Elisa Monagheddu  879173    Academic Year   2024/2025    
+============================================================
+FILE: Settlement, Fees, and Interchange- Data Models for Accurate Reconciliation and Exception Handling (2).pdf
+META_TITLE: 
+PREVIEW: Journal of Computer Science and Technology Studies   ISSN: 2709-104X  DOI: 10.32996/jcsts  Journal Homepage: www.al-kindipublisher.com/index.php/jcsts     JCSTS   AL-KINDI CENTER FOR RESEARCH   AND DEVELOPMENT       Copyright: © 2021 the Author(s). This article is an open access article distributed under the terms and conditions of the Creative Commons  Attribution (CC-BY) 4.0 license (https://cre
+============================================================
+FILE: Settlement, Fees, and Interchange- Data Models for Accurate Reconciliation and Exception Handling.pdf
+META_TITLE: 
+PREVIEW: Journal of Computer Science and Technology Studies   ISSN: 2709-104X  DOI: 10.32996/jcsts  Journal Homepage: www.al-kindipublisher.com/index.php/jcsts     JCSTS   AL-KINDI CENTER FOR RESEARCH   AND DEVELOPMENT       Copyright: © 2021 the Author(s). This article is an open access article distributed under the terms and conditions of the Creative Commons  Attribution (CC-BY) 4.0 license (https://cre
+============================================================
+FILE: The Value of Open Data on Global Entities.pdf
+META_TITLE: 
+PREVIEW: June 2026  Kirsten D. Sandberg  Foreword by Gabriele Columbro, FINOS The Value of  Open Data on  Global Entities Turning the World’s Largest Open Entity  Graph into a Catalyst for Collaboration,  Innovation, and Transformation 
+============================================================

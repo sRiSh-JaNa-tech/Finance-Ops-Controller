@@ -1,0 +1,412 @@
+AI FINANCE CONTROLLER — PROTOTYPE 3
+Implementation Specification for Fuzzy Matching & Financial Reconciliation
+Razorpay Buildathon · Evidence-Grounded Investigation Agent
+1. Purpose and Scope of This Document
+Prototype-2 defined what to build — the architecture, research hypotheses, and design intent. This document tells AI coding agents and developers HOW to build it. Every component below includes concrete implementation steps, the specific algorithms to use, the data structures to maintain, and the decision logic required.
+This document is specifically focused on the two core technical problems that make financial reconciliation hard:
+Fuzzy Matching — finding records that refer to the same real-world event even when field values differ due to typos, formatting, truncation, abbreviations, currency rounding, or naming variation.
+Financial Reconciliation — determining whether a financial relationship (match, split, fee-adjusted, reversed, delayed) holds between one or more records, using accounting rules rather than similarity scores alone.
+2. Fuzzy Matching — Concrete Implementation
+2.1 What Fuzzy Matching Is and Why It Is Needed
+In a Razorpay payment ecosystem, the same underlying transaction appears in multiple systems with different representations. A merchant's invoice may say "Amazon Web Services India Pvt Ltd" while the bank statement says "AMZNWEBSERVICES". The amount ₹12,456.00 in the ERP may appear as ₹12,455.72 in the gateway after currency rounding. An order ID "ORD-2024-001847" may appear as "1847" in a legacy system.
+Fuzzy matching is the process of finding these pairs despite surface-level differences. It has three stages: (1) blocking to reduce the search space, (2) similarity scoring across multiple fields, and (3) threshold-based candidate selection.
+2.2 Blocking — Reducing the Search Space
+Blocking prevents O(n²) comparisons by grouping records that could plausibly match. An AI agent must generate blocking keys before comparing anything.
+Implement the following blocking strategies in order of priority:
+Exact transaction ID blocking: if both records share any common identifier (UPI ref, gateway order_id, bank UTR number), place them in the same block immediately. This is a hard match candidate.
+Amount-window blocking: group records whose amounts fall within ±2% of each other OR within ±₹50 (whichever is larger). Amounts outside this window can never match on amounts alone and skip comparison.
+Date-window blocking: group records within a ±3 calendar day window. Settlement typically lags payment by T+1 or T+2. Refunds and reversals may appear up to 7 days later.
+Phonetic/token blocking: tokenise merchant/description fields (split on spaces, slashes, dashes), apply Soundex or DoubleMetaphone to each token, then group records sharing ≥1 matching token. This catches "HDFC Bank" vs "HDFC Bk".
+Prefix blocking: use the first 4 characters of normalised merchant name as a blocking key for large datasets.
+A record pair only proceeds to similarity scoring if it survives at least one blocking key. This typically reduces comparisons by 95-99%.
+2.3 Field Normalisation (Before Scoring)
+Before computing any similarity, normalise every field. Failing to normalise is the most common source of false negatives.
+Field
+Normalisation Steps
+Example
+Amount
+Convert to paise (integer). Strip currency symbols. Round to nearest paise.
+₹1,234.50 → 123450
+Merchant Name
+Lowercase. Remove punctuation. Expand abbreviations (pvt→private, ltd→limited, bk→bank). Strip legal suffixes.
+"HDFC Bk Ltd." → "hdfc bank"
+Date
+Parse to Unix timestamp. Handle IST/UTC. Treat missing time as 00:00:00.
+"24-Aug-26" → 1756047600
+Reference ID
+Strip leading zeros. Remove dashes and spaces. Uppercase.
+"ORD-001847" → "1847"
+Description
+Lowercase. Remove stop words (payment, for, to, by). Tokenise.
+"Payment for invoice #1234" → ["invoice", "1234"]
+Currency
+Map to ISO 4217 three-letter code. Reject if unmappable.
+"Rs", "INR", "₹" → "INR"
+2.4 Similarity Scoring
+After normalisation, compute a weighted similarity score across fields. The score is a number between 0 and 1.
+2.4.1 Amount Similarity
+Amount similarity is a hard constraint, not a soft score. Apply the following rule:
+amount_sim = 1.0   if abs(a1 - a2) == 0
+amount_sim = 0.95  if abs(a1 - a2) <= 1 (rounding difference)
+amount_sim = 0.80  if abs(a1 - a2) / max(a1, a2) <= 0.005 (≤0.5% difference, likely FX)
+amount_sim = 0     if abs(a1 - a2) / max(a1, a2) > 0.02 (>2% difference)
+Note: if the difference equals a known fee amount (e.g., Razorpay 2% MDR), set amount_sim = 0.90 and flag as fee-adjusted candidate.
+2.4.2 String Similarity for Names and Descriptions
+Use three algorithms and take the maximum:
+Jaro-Winkler similarity: good for short strings and typos. Weight: 0.4.
+Token Set Ratio (from RapidFuzz): splits both strings into token sets and computes sorted token intersection ratio. Good for word-order differences ("Flipkart India" vs "India Flipkart"). Weight: 0.4.
+Longest Common Subsequence ratio: LCS length / max(len1, len2). Good for abbreviated strings. Weight: 0.2.
+name_sim = 0.4 * jaro_winkler(s1, s2) + 0.4 * token_set_ratio(s1, s2) + 0.2 * lcs_ratio(s1, s2)
+2.4.3 Date Similarity
+date_sim = 1.0   if |d1 - d2| == 0 days
+date_sim = 0.9   if |d1 - d2| == 1 day (T+1 settlement)
+date_sim = 0.75  if |d1 - d2| == 2-3 days (T+2/T+3 settlement)
+date_sim = 0.5   if |d1 - d2| == 4-7 days (late settlement or reversal window)
+date_sim = 0     if |d1 - d2| > 7 days
+2.4.4 Reference ID Similarity
+ref_sim = 1.0   if normalised IDs are identical
+ref_sim = 0.9   if one ID is a suffix/prefix of the other (e.g., "1847" in "ORD-001847")
+ref_sim = 0.0   otherwise (IDs that don't overlap mean different transactions)
+2.4.5 Composite Score
+Combine field scores with weights tuned for Indian payment reconciliation:
+Field
+Weight
+Rationale
+Amount
+0.40
+Amounts are deterministic; mismatches are the primary signal
+Reference ID
+0.30
+IDs are the most reliable identity signal when present
+Merchant/Description
+0.15
+Names vary significantly across systems
+Date
+0.15
+Settlement lag makes dates soft signals
+composite_score = 0.40 * amount_sim + 0.30 * ref_sim + 0.15 * name_sim + 0.15 * date_sim
+Hard constraint: if amount_sim == 0 AND ref_sim == 0, set composite_score = 0 regardless of other fields. Two records with different amounts and no shared identifiers cannot represent the same transaction.
+2.5 Candidate Thresholds
+Composite Score
+Action
+Label
+≥ 0.92
+Auto-match if financial rules also pass
+MATCHED
+0.75 – 0.91
+Pass to investigation agent for review
+CANDIDATE
+0.50 – 0.74
+Flag for human review queue
+UNCERTAIN
+< 0.50
+Discard from candidate set
+NO MATCH
+3. Financial Reconciliation — Concrete Implementation
+3.1 What Reconciliation Is and How It Differs from Matching
+Fuzzy matching finds candidate pairs. Reconciliation verifies that the financial relationship between those records is valid according to accounting rules. A record pair can have a high similarity score but fail reconciliation (e.g., two invoices with the same amount but different GST treatments), or have a modest similarity score but pass reconciliation cleanly (e.g., a split payment where three transactions sum to one invoice).
+From the research literature (Fardous 2026, Gosangi 2025), effective reconciliation requires checking four independent dimensions: pricing compliance, authorization integrity, temporal consistency, and adjustment behavior. All four must pass for a MATCHED decision.
+3.2 Reconciliation Rule Engine
+Implement a deterministic rule engine that the LLM investigation agent calls as a tool. The engine takes an evidence bundle and returns a structured pass/fail/warning result for each rule category.
+3.2.1 Amount Conservation Rules (Pricing Compliance)
+These rules check that amounts add up correctly. They must be computed with integer arithmetic in paise — never floating point.
+Rule AC-1 (Exact Match): sum(source_amounts) == sum(destination_amounts). Pass if equal.
+Rule AC-2 (Fee-Adjusted Match): sum(source) == sum(destination) + fee_amount, where fee_amount is retrieved from the versioned fee schedule for this merchant category, date, and payment method.
+Rule AC-3 (GST-Adjusted Match): sum(source) == sum(destination) + gst_amount, where gst_amount = base_amount × applicable_rate (18% standard, 12% reduced, 0% exempt). The applicable rate must be looked up from the GST rule table by HSN/SAC code and date.
+Rule AC-4 (Split Payment): multiple source records sum to one destination record. Verify: sum(source_1..n) == destination, where each source_i shares the same parent order_id.
+Rule AC-5 (Reversal): source amount == reversal amount, reversal date is within refund window (typically 90 days), reversal references original transaction ID.
+FAIL if: none of AC-1 through AC-5 passes
+WARN if: AC-2 passes but fee rate deviates >5% from scheduled rate
+PASS if: any rule passes with zero deviation
+3.2.2 Authorization Integrity Rules
+These rules verify that every transaction was processed through proper approval chains. From Fardous (2026), authorization integrity is the second strongest predictor of reconciliation effectiveness (β=0.29).
+Rule AI-1: every adjustment, reversal, or refund has a valid approval_code field that resolves to an authorized operator in the system.
+Rule AI-2: discount amounts do not exceed the merchant's approved discount_ceiling_pct for their category and tier.
+Rule AI-3: the payment method matches the merchant's approved payment method list (e.g., some merchants are not enabled for UPI Credit).
+Rule AI-4: international transactions have a valid FEMA category code and the amount does not exceed the merchant's LRS (Liberalised Remittance Scheme) limit.
+FAIL if: any authorization field is missing or resolves to an unauthorized role
+WARN if: authorization is present but the approver role is lower than required for this amount tier
+3.2.3 Temporal Consistency Rules
+Settlement timelines in India follow RBI-mandated T+1 settlement for most UPI and card transactions, with T+2 for certain NEFT-based settlements.
+Rule TC-1: settlement_date - payment_date is within [0, max_settlement_lag] days where max_settlement_lag is 1 for UPI, 2 for cards, 3 for net banking.
+Rule TC-2: for reversals, reversal_date - original_date is within [0, 90] days.
+Rule TC-3: invoice_date <= payment_date (payment cannot precede invoice creation).
+Rule TC-4: for recurring subscriptions, charge_date falls within ±2 days of the expected billing_cycle_date.
+FAIL if: TC-1 or TC-3 fails (hard constraint)
+WARN if: TC-1 is within extended window (e.g., T+5) due to bank holiday — check RBI holiday calendar
+3.2.4 Adjustment Behavior Rules
+Adjustments are high-risk. The Fardous (2026) research shows adjustment behavior monitoring explains 21% of variance in leakage detection effectiveness independently of pricing checks.
+Rule AB-1: the same transaction_id has not been reversed more than once.
+Rule AB-2: the total credits/refunds issued to a customer in a rolling 30-day window do not exceed 3× their average monthly spend.
+Rule AB-3: credit notes have a valid reason_code and the reason_code is on the approved list (not a catch-all category like "other").
+Rule AB-4: write-off amounts require a secondary approval if exceeding ₹10,000.
+FAIL if: AB-1 fails (duplicate reversal is a definite error)
+WARN if: AB-2 or AB-3 fires (investigate but do not auto-fail)
+3.3 Revenue Leakage Detection Integration
+Based on the Fardous (2026) findings, incorporate four detection constructs as scoring dimensions in the reconciliation pipeline. Each construct produces a score 0–1 where 1 means no leakage risk detected.
+Construct
+Score Weight
+Implementation
+Pricing Compliance Detection
+0.38
+AC rules result. 1.0 if all pass; deduct 0.2 per AC rule failure.
+Authorization Integrity
+0.29
+AI rules result. 1.0 if all pass; 0 if any AI-1 fails.
+Adjustment Behavior Monitoring
+0.21
+AB rules result. 1.0 if all pass; deduct 0.15 per AB warning.
+Temporal Anomaly Identification
+0.17
+TC rules result. 1.0 if all pass; 0 if TC-1 or TC-3 fails.
+leakage_risk = 1 - (0.38*pcd + 0.29*ai + 0.21*abm + 0.17*tai)
+leakage_risk > 0.3 should trigger the investigation agent to retrieve additional evidence before making a decision.
+4. Investigation Agent — Tool Calls and Decision Logic
+4.1 Agent Inputs
+The agent receives an evidence bundle containing: the candidate pair(s) from fuzzy matching, their composite similarity score, rule engine results for all four rule categories, any warning messages from the rule engine, and the leakage_risk score.
+4.2 Agent Decision Tree
+Implement this exact decision tree. The agent follows it in order and stops at the first applicable branch:
+Branch 1 (Auto-Match): composite_score ≥ 0.92 AND all AC rules pass AND all AI rules pass AND leakage_risk < 0.1. → Decision: MATCHED. No LLM call needed. Log evidence bundle and proceed.
+Branch 2 (Hard Contradiction): any AC rule returns FAIL AND no override explanation exists. → Decision: EXCEPTION. Log the specific rule that failed and the numerical discrepancy.
+Branch 3 (Investigation Required): composite_score 0.75-0.91 OR any rule returns WARN OR leakage_risk 0.1-0.3. → Call investigate() tool. LLM examines evidence bundle, selects next tool call, and runs up to 5 investigation steps.
+Branch 4 (Uncertain — Budget Reached): investigation steps exhausted without resolution. → Decision: UNCERTAIN. Route to human review queue with full evidence bundle and unresolved questions.
+Branch 5 (Low Confidence): composite_score < 0.75. → Decision: UNCERTAIN. Do not force a match.
+4.3 LLM System Prompt for Investigation
+When calling the LLM, use this structured system prompt (adapt as needed):
+You are a financial reconciliation investigator for a Razorpay payment system.
+You have access to: retrieve_candidates(), get_related_events(), run_financial_rules(),
+  inspect_entity_graph(), search_source_history(), test_reconciliation_hypothesis().
+Rules:
+1. You may call at most 5 tools per case.
+2. Every numerical claim must be verified by run_financial_rules(), not computed by you.
+3. State your hypothesis before each tool call.
+4. If you cannot reach a confident decision, output UNCERTAIN with unresolved questions.
+5. Never declare MATCHED without citing at least one passing AC rule result.
+6. Output must be a JSON object with: decision, confidence (0-1), cited_evidence[], unresolved[].
+4.4 Structured Evidence Record (Output Format)
+Every case must produce a structured audit record regardless of decision. This is the only output the policy verifier accepts:
+{
+  "case_id": "uuid",
+  "decision": "MATCHED | EXCEPTION | UNCERTAIN",
+  "confidence": 0.87,
+  "fuzzy_score": 0.91,
+  "leakage_risk": 0.08,
+  "rules_passed": ["AC-2", "AI-1", "AI-2", "TC-1"],
+  "rules_failed": [],
+  "rules_warned": ["AB-3"],
+  "tool_calls": ["retrieve_candidates", "run_financial_rules"],
+  "cited_evidence": ["source_record_id_123", "gateway_txn_id_456"],
+  "exception_cause": null,
+  "unresolved": ["credit note reason code could not be verified"],
+  "human_review_required": false,
+  "investigator": "agent_v2"
+}
+5. Canonical Data Model for Razorpay Transactions
+5.1 Core Transaction Record
+Every transaction from every source (Razorpay gateway, bank statement, merchant ERP, GST portal) must be normalised to this canonical schema before entering the reconciliation pipeline:
+Field
+Type
+Description
+Source
+txn_id
+UUID
+Internal canonical ID assigned by ingestion
+Generated
+source_system
+Enum
+RAZORPAY | BANK | ERP | GST | MERCHANT
+Ingestion
+source_id
+String
+Original ID in source system
+Source
+amount_paise
+Integer
+Amount in Indian paise (₹1 = 100 paise)
+Normalised
+currency
+String(3)
+ISO 4217 code (INR, USD, etc.)
+Normalised
+txn_date
+Unix timestamp
+Transaction initiation date (IST)
+Normalised
+settlement_date
+Unix timestamp
+Actual settlement date if known
+Source
+merchant_id
+String
+Razorpay merchant ID
+Source
+merchant_name_raw
+String
+Original merchant name as received
+Source
+merchant_name_norm
+String
+Normalised merchant name
+Normalised
+payment_method
+Enum
+UPI | CARD | NETBANKING | WALLET | EMI
+Source
+status
+Enum
+CAPTURED | REFUNDED | FAILED | REVERSED
+Source
+parent_txn_id
+String?
+For refunds/reversals: original txn source_id
+Source
+order_id
+String?
+Merchant order ID if available
+Source
+utr
+String?
+UPI Transaction Reference number
+Source
+gstin
+String?
+Merchant GSTIN for GST reconciliation
+Source
+fee_paise
+Integer?
+Gateway fee in paise if known
+Source
+gst_paise
+Integer?
+GST on fee in paise if known
+Source
+provenance
+JSON
+Raw source record and transformation log
+System
+5.2 Evidence Bundle Structure
+The investigation agent works only from evidence bundles. An evidence bundle is assembled by the retrieval layer before the agent is called:
+source_records: list of canonical transaction records in this case
+candidate_scores: fuzzy match scores between each pair
+rule_results: output of the rule engine for each rule category
+related_events: settlement records, refund records, linked orders
+entity_graph_context: merchant tier, category, historic match rate
+anomaly_signals: leakage_risk score and which construct drove it
+missing_fields: list of fields that were null in source records
+prior_cases: any previous reconciliation decisions for this merchant/order
+6. Test Scenarios for Prototype Validation
+6.1 Required Test Cases
+Build a synthetic benchmark with these scenarios. The agent must handle all of them correctly to claim the research contribution:
+Scenario
+Expected Decision
+Key Rule Invoked
+Exact match: all fields identical
+MATCHED
+AC-1 passes
+Fee-adjusted: gateway charged 2% MDR
+MATCHED
+AC-2 passes with fee lookup
+GST mismatch: wrong rate applied
+EXCEPTION
+AC-3 fails
+Split payment: 3 partial payments sum to 1 invoice
+MATCHED
+AC-4 passes
+Reversal: valid refund within 90 days
+MATCHED
+AC-5 + TC-2 pass
+Reversal: refund after 90-day window
+EXCEPTION
+TC-2 fails
+Duplicate reversal: same txn reversed twice
+EXCEPTION
+AB-1 fails
+Merchant name typo: "Flipkart" vs "Flipkartt"
+MATCHED
+name_sim ≥ 0.90
+Amount within 0.3%: FX rounding
+MATCHED
+AC-1 passes with rounding tolerance
+Amount mismatch >2%: unexplained
+UNCERTAIN or EXCEPTION
+AC-1 to AC-5 all fail
+T+2 settlement: card payment
+MATCHED
+TC-1 passes for cards
+T+5 settlement: bank holiday cascade
+MATCHED (warned)
+TC-1 WARN with holiday lookup
+Missing authorization code on refund
+UNCERTAIN
+AI-1 FAIL → human review
+Two plausible candidates tied at 0.85
+UNCERTAIN
+Agent abstains correctly
+Revenue leakage: repeated micro-credits
+EXCEPTION
+AB-2 fires
+6.2 Evaluation Metrics
+Report these metrics across all test scenarios to validate the prototype:
+Match precision and recall by scenario category
+Exception cause classification accuracy (does the stated cause match the ground truth?)
+False match rate (MATCHED decisions that are actually wrong)
+Abstention quality (are UNCERTAIN cases actually ambiguous?)
+Evidence verifiability (can every cited_evidence ID be traced to a source record?)
+Tool call efficiency (average tool calls per case; target < 3 for auto-match cases)
+7. LLM Constraints — What the Agent Must Never Do
+These are hard constraints enforced by the policy verifier. The LLM cannot override them:
+Never compute financial totals independently. All arithmetic must go through run_financial_rules(). LLMs have floating-point reasoning errors that are unacceptable in accounting contexts.
+Never declare MATCHED on amount similarity alone. A reference ID conflict or authorization failure must block the match.
+Never invent evidence. If a field is missing from the evidence bundle, state it as missing. Do not assume what it would have been.
+Never label a record as fraudulent from an anomaly score alone. Anomaly scores are inputs to investigation, not conclusions.
+Never override a hard rule failure with natural language reasoning. "The amounts are close enough" is not a valid override for a rule that returned FAIL.
+Never store or transmit raw financial data outside the evidence bundle. Privacy and audit requirements apply.
+8. Razorpay-Specific Implementation Notes
+8.1 API Data Sources
+The following Razorpay API endpoints provide the data needed for reconciliation. Implement connectors for each:
+GET /v1/payments/{payment_id} — payment details including amount, method, status, created_at, fee, tax
+GET /v1/settlements — settlement batch details with UTR numbers
+GET /v1/refunds/{refund_id} — refund details with original payment_id
+GET /v1/orders/{order_id} — order details with linked payments
+POST /v1/settlements/recon/combined — combined settlement reconciliation report
+8.2 Fee Schedule
+Razorpay fees vary by payment method and merchant category. The rule engine must look these up from a versioned fee table, not hardcode them:
+Payment Method
+Standard Fee
+Notes
+UPI
+0% (as of 2024 RBI circular)
+Subject to change; check fee schedule date
+Domestic cards
+1.5% - 2%
+Varies by card type and merchant category
+International cards
+3% + cross-border fee
+Subject to FEMA reporting
+Net banking
+Flat ₹10 - ₹15
+Varies by bank
+Wallet
+1.5%
+Subject to wallet provider agreement
+EMI
+1.5% - 2.5%
+Varies by tenure and issuer
+8.3 UPI-Specific Reconciliation
+UPI transactions require special handling due to the three-party structure (payer, payee, NPCI):
+Match on UTR (UPI Transaction Reference) first — this is a globally unique identifier assigned by NPCI.
+If UTR is missing (common in older records), match on VPA (Virtual Payment Address) + amount + date window.
+UPI mandate transactions (recurring) have a mandate_id; match recurring charges against the mandate record.
+UPI Autopay reversals must reference the original mandate_id, not just the transaction amount.
+9. Summary for AI Coding Agents
+When reading this document to implement the prototype, apply the following approach in sequence:
+Step 1: Implement field normalisation functions for all six field types (Section 2.3). Write unit tests first.
+Step 2: Implement blocking keys and the candidate generation loop (Section 2.2). Verify that blocking reduces the search space by >90% on synthetic data.
+Step 3: Implement composite similarity scoring (Section 2.4). Test against the 15 benchmark scenarios (Section 6.1).
+Step 4: Implement the rule engine with all four rule categories (Section 3.2). Each rule must return PASS/FAIL/WARN with a numerical explanation.
+Step 5: Implement the leakage risk score (Section 3.3) using the exact weights from the Fardous (2026) research.
+Step 6: Implement the investigation agent with the decision tree (Section 4.2) and the structured output format (Section 4.4).
+Step 7: Wire Razorpay API connectors (Section 8.1) and validate the fee lookup table (Section 8.2).
+Step 8: Run all 15 benchmark scenarios and report metrics (Section 6.2).
+The goal of Prototype 3 is a working implementation where every reconciliation decision is traceable to a specific rule result and a specific source record. An auditor must be able to reproduce any decision by reading the evidence bundle alone.
+Document compiled from: Prototype-2 design spec · Fardous (2026) AI Revenue Leakage Detection · Gosangi (2025) SOA Payment Integration · Furche et al. (2016) Data Wrangling · Drive folder: research_papers
