@@ -52,7 +52,9 @@ def initialize_demo_state(n_cases=50, seed=42):
     calibrator = ConfidenceCalibrator()
 
     processed_cases = []
-    for gt in dataset.ground_truth_cases:
+    total = len(dataset.ground_truth_cases)
+    for i, gt in enumerate(dataset.ground_truth_cases):
+        print(f"[*] Processing live case {i+1}/{total} (ID: {gt['case_id']})...")
         src_id = gt.get("source_tx_id") or gt.get("source_record_id")
         src_tx = repo.get_transaction(src_id)
         if not src_tx:
