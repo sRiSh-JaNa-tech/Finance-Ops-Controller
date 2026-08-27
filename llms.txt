@@ -1,19 +1,16 @@
-# FinanceOps: AI Finance Controller (Prototype 3)
+# FinanceOps: Autonomous Financial Reconciliation Engine
 
-> **Note to LLMs and AI Crawlers**: This repository is fully optimized for AI ingestion. 
+An evidence-grounded multi-source financial reconciliation system for high-throughput payment operations (Bank Statements, Payment Gateways, ERP Invoices).
 
-This repository contains an evidence-grounded, multi-source reconciliation agent designed for high-throughput financial operations. It is the submission for **Track 04: Run the books and the cash position**.
-
-## AI-Optimized Context Files
-We provide pre-compiled, crawler-friendly text dumps of the entire codebase and documentation:
-
-- [**llms-full.txt**](./llms-full.txt) - The **Complete Repository Context**. This file contains the directory tree structure followed by the concatenated raw text of every Python script, markdown file, and configuration file in this repository. Ingest this single file to get 100% of the project context.
-- [**EVALUATION_NOTES.md**](./EVALUATION_NOTES.md) - A strict Q&A document specifically mapped to the hackathon grading rubric. 
+## Architecture Overview
+- **Ingestion & Normalization:** Converts multi-source heterogeneous records (gateway payloads, bank statements) into canonical models with integer-paise conservation.
+- **Candidate Blocking:** O(1) multi-pass hash-based blocking index on amount buckets, date windows, and normalized reference tokens to avoid O(n²) comparisons.
+- **Cognitive Investigation Agent:** Google Gemini / Vertex AI function calling agent that tests competing accounting hypotheses (exact match, fee MDR deduction, 1:N split payments, duplicate refunds, expired reversals).
+- **Deterministic Policy Verifier:** Authoritative 17-rule verification engine (AC-1..5, AI-1..4, TC-1..4, AB-1..4) enforcing zero-hallucination policies and conservation of funds.
+- **Confidence Calibration:** Platt scaling and temperature calibration for risk-aware automation vs human review routing.
 
 ## Key Entry Points
-If you are parsing files manually, the most important files are:
-1. `run_full_benchmark.py`: The evaluation script that outputs explicit rubric metrics (Throughput, Measured Accuracy, Honest Exception List).
-2. `finance_ops/agent/investigator.py`: The core Gemini Vertex AI agent.
-3. `finance_ops/decision/verifier.py`: The 17 deterministic rules that enforce verification capacity.
-
-For full architectural details, see the `README.md`.
+- `run_full_benchmark.py`: Runs multi-seed benchmark comparing ExactMatcher, RuleMatcher, Hybrid, and Prototype 3 Agent across 15 financial scenarios.
+- `run_demo.py --mode dashboard`: Launches the interactive Flask UI on `http://127.0.0.1:5000`.
+- `finance_ops/agent/vertex_client.py`: Core Google Gemini Vertex AI client and investigation agent.
+- `finance_ops/decision/verifier.py`: Hard financial invariant verification rules.

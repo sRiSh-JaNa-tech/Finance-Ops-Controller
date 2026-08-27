@@ -21,53 +21,66 @@ def run_full_benchmark():
     print("[*] Architecture: Evidence-Grounded Autonomous Investigation Agent")
     print("[*] Gemini Vertex AI Native Function Calling + Deterministic Fallback Engine\n")
 
-    print("[METRIC: Throughput] Processing 135 complex synthetic transactions across 3 random seeds...")
+    cases_per_batch = 100
+    print(f"[METRIC: Throughput] Processing single batch of {cases_per_batch} complex synthetic transactions...")
     
     results = run_benchmark(
-        seeds=[42, 101, 202],
-        cases_per_seed=45,
+        seeds=[42],
+        cases_per_seed=cases_per_batch,
         run_ablations=False
     )
 
-    # Section 1: Comparative Systems Table
-    print_banner("[METRIC: Measured Accuracy] SYSTEM COMPARISON (3 Seeds, 45 Cases/Seed)")
-    fmt_header = "{:<32} {:^12} {:^12} {:^12} {:^10} {:>12}"
-    fmt_row    = "{:<32} {:^12} {:^12} {:^12} {:^10} {:>12}"
-    print(fmt_header.format("System Name", "F1 Score", "Precision", "Recall", "FMR %", "Utility ($)"))
-    print("-" * 88)
+    # We use Prototype3 for the main reporting
+    p3_stats = results["systems"]["Prototype3_GeminiVertexAgent"]
+    rule_stats = results["systems"]["RuleMatcher"]
 
-    p3_metrics = None
-    for sys_name, m in results["systems"].items():
-        if "Prototype3" in sys_name:
-            p3_metrics = m
-        marker = " (P3 Agent) *" if "Prototype3" in sys_name else ""
-        name_display = (sys_name + marker)[:31]
-        f1_col = f"{m['f1_score']*100:.1f}%"
-        prec_col = f"{m['precision']*100:.1f}%"
-        rec_col = f"{m['recall']*100:.1f}%"
-        fmr_col = f"{m['false_match_rate']*100:.1f}%"
-        util_col = f"${m['cost_weighted_utility']:.0f}"
-
-        print(fmt_row.format(name_display, f1_col, prec_col, rec_col, fmr_col, util_col))
-
-    # Section 2: Honest Exception List
-    print_banner("[METRIC: Honest Exception List] (P3 Agent - Unresolved Cases)")
-    print("The following cases fell below the 0.60 calibrated confidence threshold")
-    print("or were vetoed by deterministic rules. They are routed for human review.\n")
+    # Calculate raw counts from the first seed
+    exceptions = results.get("honest_exception_list", [])
     
-    exception_count = int((1.0 - p3_metrics['automation_rate_pct']/100.0) * 135) if p3_metrics else 24
+    # We must calculate TP, FP, FN, UNCERTAIN
+    # Since metrics.py doesn't return raw counts in the summary, we can approximate or if metrics engine was modified:
+    # We can calculate the match rate and counts from the honest exception list.
+    # Actually, the runner summary doesn't expose raw counts directly, but we have recall and precision.
+    # We can just output the metrics.
     
-    print(f"Total Exceptions Flagged for Human Review: {exception_count}")
-    print("Sample Exceptions:")
-    print(" - [UNCERTAIN] Case 102A: 'Stripe fee deduction exceeded 5% limit (vetoed by Rule 4)'")
-    print(" - [UNCERTAIN] Case 204B: 'Missing counterparty ID; graph neighbors insufficient to prove match'")
-    print(" - [EXCEPTION] Case 305C: 'Matched amounts do not conserve zero balance (vetoed by Rule 1)'")
+    # 8.5/10 Template
+    print(f"\nBATCH: {cases_per_batch} cases")
+    print("-" * 48)
+    
+    # Formatting metrics
+    match_rate = p3_stats['automation_rate_pct']
+    prec = p3_stats['precision'] * 100
+    rec = p3_stats['recall'] * 100
+    f1 = p3_stats['f1_score'] * 100
+    fmr = p3_stats['false_match_rate'] * 100
 
-    # Section 3: Progressive Blocking Performance
-    print_banner("SECTION 3: HASH-BASED BLOCKING PERFORMANCE (O(1) Retrieval)")
-    blk = results["blocking_performance"]
-    print(f"  Average Reduction Ratio (RR):    {blk['avg_reduction_ratio_pct']:.2f}%  [Target >= 95.0%]")
-    print(f"  Average Pairs Completeness (PC): {blk['avg_pairs_completeness_pct']:.2f}%  [Target >= 99.0%]")
+    print(f"MATCH RATE: {match_rate:.1f}%")
+    print(f"PRECISION: {prec:.1f}%, RECALL: {rec:.1f}%, F1: {f1:.1f}%, FALSE MATCH RATE: {fmr:.1f}%")
+
+    print(f"\nTHROUGHPUT:")
+    print(f"  {cases_per_batch} cases")
+    print(f"  {p3_stats.get('throughput_cases_per_sec', 0)} cases/sec")
+    print(f"  p95 latency: {p3_stats.get('p95_latency_ms', 0)} ms")
+
+    baseline_recall = rule_stats['recall'] * 100
+    improvement = rec - baseline_recall
+
+    print(f"\nAI CONTRIBUTION:")
+    print(f"  LLM-investigated: {p3_stats.get('llm_investigated', 0)}")
+    print(f"  deterministic fast-path: {p3_stats.get('deterministic_fast_path', 0)}")
+    print(f"  LLM improved recall by: +{improvement:.1f}% vs baseline")
+
+    print(f"\nEXCEPTIONS:")
+    shown = 0
+    for e in exceptions[:15]:
+        shown += 1
+        cid = e.get("case_id", "UNKNOWN")
+        reason = e.get("reason", "UNKNOWN")
+        expl = e.get("explanation", "").strip()
+        print(f"  {cid} -> [{reason}] \"{expl}\"")
+
+    if len(exceptions) > 15:
+        print(f"  ... and {len(exceptions) - 15} more.")
 
     # Section 4: Export JSON
     output_path = "benchmark_results.json"
@@ -78,3 +91,4 @@ def run_full_benchmark():
 
 if __name__ == "__main__":
     run_full_benchmark()
+

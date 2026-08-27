@@ -14,10 +14,12 @@ Reports:
 - Per-scenario Accuracy across all 15 Canonical Scenarios
 """
 
+import time
 from typing import List, Dict, Any, Optional
 from decimal import Decimal
 import numpy as np
 
+from finance_ops.core.models import DecisionLabel
 from finance_ops.generators.synthetic_data import generate_synthetic_dataset
 from finance_ops.generators.fault_injection import ScenarioTemplate
 from finance_ops.ingestion.storage import FinancialDataRepository
@@ -77,6 +79,7 @@ def run_benchmark(
 
     seed_results: Dict[str, List[Dict[str, Any]]] = {sys: [] for sys in system_names}
     blocking_stats_all: List[Dict[str, Any]] = []
+    all_honest_exceptions: List[Dict[str, Any]] = []
 
     for seed in seeds:
         reset_reconciliation_registry()
@@ -97,6 +100,8 @@ def run_benchmark(
                 candidate_lookup[src.transaction_id] = []
             candidate_lookup[src.transaction_id].append(tgt)
 
+        honest_exceptions_seed: List[Dict[str, Any]] = []
+
         for sys_name in system_names:
             predictions = []
 
@@ -111,27 +116,53 @@ def run_benchmark(
                     candidates = [repo.get_transaction(cid) for cid in case["candidate_tx_ids"] if repo.get_transaction(cid)]
 
                 if sys_name == "ExactMatcher":
+                    start_time = time.perf_counter()
                     res = exact_matcher.match(src_tx, candidates)
-                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 1.0})
+                    lat = time.perf_counter() - start_time
+                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 1.0, "latency_ms": lat * 1000})
                 elif sys_name == "RuleMatcher":
+                    start_time = time.perf_counter()
                     res = rule_matcher.match(src_tx, candidates)
-                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 1.0})
+                    lat = time.perf_counter() - start_time
+                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 1.0, "latency_ms": lat * 1000})
                 elif sys_name == "Prototype1_Hybrid":
+                    start_time = time.perf_counter()
                     res = proto1_matcher.match(src_tx, candidates)
-                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 0.85})
+                    lat = time.perf_counter() - start_time
+                    predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 0.85, "latency_ms": lat * 1000})
                 elif sys_name == "Prototype3_GeminiVertexAgent":
+                    start_time = time.perf_counter()
                     rec = agent.investigate(src_tx, candidates, case_id=case["case_id"])
                     final_dec = verifier.verify_and_finalize(rec, src_tx, rec.confidence_score)
+                    lat = time.perf_counter() - start_time
+                    
                     predictions.append({
                         "decision": final_dec.decision,
                         "reason": final_dec.reason,
                         "confidence": final_dec.calibrated_confidence,
                         "tool_calls": rec.tool_calls_performed,
-                        "leakage_risk": rec.leakage_risk
+                        "leakage_risk": rec.leakage_risk,
+                        "investigator": rec.investigator,
+                        "latency_ms": lat * 1000
                     })
+                    if final_dec.decision in (DecisionLabel.UNCERTAIN, DecisionLabel.EXCEPTION) or final_dec.verifier_status != "VERIFIED_VALID":
+                        honest_exceptions_seed.append({
+                            "case_id": case["case_id"],
+                            "template": case.get("template", "UNKNOWN"),
+                            "decision": final_dec.decision.value,
+                            "reason": final_dec.reason.value,
+                            "calibrated_confidence": round(final_dec.calibrated_confidence, 4),
+                            "verifier_status": final_dec.verifier_status,
+                            "verifier_notes": final_dec.verifier_notes,
+                            "explanation": final_dec.explanation,
+                            "source_amount_inr": float(src_tx.amount),
+                            "candidate_count": len(candidates),
+                        })
 
             sys_metrics = metric_engine.evaluate_predictions(predictions, dataset.ground_truth_cases)
             seed_results[sys_name].append(sys_metrics)
+
+        all_honest_exceptions.extend(honest_exceptions_seed)
 
     summary_dict = {}
     systems_dict = {}
@@ -144,10 +175,29 @@ def run_benchmark(
         utilities = [r["cost_weighted_utility"] for r in seed_results[sys_name]]
         auto_rates = [r["automation_rate"] for r in seed_results[sys_name]]
 
+        # Latency and AI Contribution tracking
+        all_latencies = []
+        llm_count = 0
+        deterministic_count = 0
+        total_cases = 0
+
+        for r in seed_results[sys_name]:
+            all_latencies.extend(r.get("latencies_ms", []))
+            llm_count += r.get("llm_investigated", 0)
+            deterministic_count += r.get("deterministic_fast_path", 0)
+            total_cases += r.get("total_cases", cases_per_seed)
+
+        p95_latency = round(float(np.percentile(all_latencies, 95)), 2) if all_latencies else 0.0
+        total_time_s = sum(all_latencies) / 1000.0 if all_latencies else 1.0
+        throughput = round(total_cases / total_time_s, 2) if total_time_s > 0 else 0.0
+
+        f1_mean = np.mean(f1_scores)
+        f1_ci = bootstrap_confidence_interval(np.array(f1_scores))
+
         metrics_obj = {
-            "f1_score": round(float(np.mean(f1_scores)), 4),
-            "f1_score_mean": round(float(np.mean(f1_scores)), 4),
-            "f1_score_ci95": (round(float(np.min(f1_scores)), 4), round(float(np.max(f1_scores)), 4)),
+            "f1_score": round(float(f1_mean), 4),
+            "f1_score_mean": round(float(f1_mean), 4),
+            "f1_score_ci95": (round(float(f1_ci[0]), 4), round(float(f1_ci[1]), 4)),
             "precision": round(float(np.mean(precisions)), 4),
             "recall": round(float(np.mean(recalls)), 4),
             "false_match_rate": round(float(np.mean(fmrs)), 4),
@@ -156,6 +206,10 @@ def run_benchmark(
             "cost_weighted_utility": round(float(np.mean(utilities)), 2),
             "cost_weighted_utility_mean": round(float(np.mean(utilities)), 2),
             "automation_rate_pct": round(float(np.mean(auto_rates)) * 100, 2),
+            "throughput_cases_per_sec": throughput,
+            "p95_latency_ms": p95_latency,
+            "llm_investigated": llm_count,
+            "deterministic_fast_path": deterministic_count,
         }
         systems_dict[sys_name] = metrics_obj
         summary_dict[sys_name] = metrics_obj
@@ -166,6 +220,7 @@ def run_benchmark(
         "cases_per_seed": cases_per_seed,
         "systems": systems_dict,
         "summary": summary_dict,
+        "honest_exception_list": all_honest_exceptions,
         "blocking_performance": {
             "avg_reduction_ratio_pct": round(float(np.mean([b["reduction_ratio_pct"] for b in blocking_stats_all])), 2),
             "avg_pairs_completeness_pct": round(float(np.mean([b["pairs_completeness_pct"] for b in blocking_stats_all])), 2),

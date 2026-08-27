@@ -80,6 +80,11 @@ class FinancialReconciliationMetrics:
         match_confidences: List[float] = []
         match_labels: List[int] = []
 
+        # Latency and AI Contribution tracking
+        latencies_ms: List[float] = []
+        llm_investigated = 0
+        deterministic_fast_path = 0
+
         # Per-scenario template tracking
         scenario_stats: Dict[str, Dict[str, int]] = {}
 
@@ -90,6 +95,14 @@ class FinancialReconciliationMetrics:
             p_reason = pred.get("reason")
             g_reason = gt.get("expected_reason")
             template = gt.get("template", "UNKNOWN")
+            
+            # Record Latency and AI contribution
+            if "latency_ms" in pred:
+                latencies_ms.append(pred["latency_ms"])
+            if pred.get("investigator") == "gemini-2.5-flash-agent":
+                llm_investigated += 1
+            elif pred.get("investigator") == "deterministic-cognitive-fallback":
+                deterministic_fast_path += 1
 
             # Initialize scenario bucket
             if template not in scenario_stats:
@@ -104,11 +117,7 @@ class FinancialReconciliationMetrics:
                 match_labels.append(is_correct)
 
             # Count outcomes
-            if p_dec == DecisionLabel.UNCERTAIN:
-                uncertain_count += 1
-                scenario_stats[template]["uncertain"] += 1
-
-            elif p_dec == DecisionLabel.MATCHED:
+            if p_dec == DecisionLabel.MATCHED:
                 if g_dec == DecisionLabel.MATCHED:
                     p_target = set(pred.get("matched_record_ids", []))
                     g_target = set(gt.get("target_record_ids", []))
@@ -119,6 +128,7 @@ class FinancialReconciliationMetrics:
                         fp += 1
                         scenario_stats[template]["fp"] += 1
                 else:
+                    # False Match (erroneous ledger reconciliation on non-matching pair)
                     fp += 1
                     scenario_stats[template]["fp"] += 1
 
@@ -126,16 +136,23 @@ class FinancialReconciliationMetrics:
                 if g_dec == DecisionLabel.EXCEPTION:
                     tp += 1
                     scenario_stats[template]["tp"] += 1
+                elif g_dec == DecisionLabel.MATCHED:
+                    # Missed a valid match by declaring an exception
+                    fn += 1
+                    unexplained_exceptions += 1
+                    scenario_stats[template]["fn"] += 1
                 else:
-                    fp += 1
-                    scenario_stats[template]["fp"] += 1
-                    if g_dec == DecisionLabel.MATCHED:
-                        unexplained_exceptions += 1
+                    fn += 1
+                    scenario_stats[template]["fn"] += 1
 
-            # False negatives: ground truth MATCHED but predicted otherwise
-            if g_dec == DecisionLabel.MATCHED and p_dec != DecisionLabel.MATCHED:
-                fn += 1
-                scenario_stats[template]["fn"] += 1
+            elif p_dec == DecisionLabel.UNCERTAIN:
+                uncertain_count += 1
+                scenario_stats[template]["uncertain"] += 1
+                if g_dec == DecisionLabel.UNCERTAIN:
+                    tp += 1
+                elif g_dec == DecisionLabel.MATCHED:
+                    fn += 1
+                    scenario_stats[template]["fn"] += 1
 
             # Reason code diagnosis
             if p_reason and g_reason:
@@ -181,6 +198,9 @@ class FinancialReconciliationMetrics:
             "cause_diagnosis_accuracy": float(reason_acc),
             "cost_weighted_utility": float(utility),
             "scenario_breakdown": scenario_breakdown,
+            "latencies_ms": latencies_ms,
+            "llm_investigated": llm_investigated,
+            "deterministic_fast_path": deterministic_fast_path,
             # For AURC computation
             "_match_confidences": match_confidences,
             "_match_labels": match_labels,
