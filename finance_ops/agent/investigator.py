@@ -15,7 +15,7 @@ from finance_ops.core.models import (
 from finance_ops.evidence.bundle import EvidenceBundle, EvidenceBundleBuilder
 from finance_ops.evidence.tools import InvestigationToolbox
 from finance_ops.agent.stopping_policy import InvestigationStoppingPolicy
-from finance_ops.agent.vertex_client import GeminiVertexReconciliationClient
+from finance_ops.agent.vertex_client import GeminiReconciliationClient
 
 
 class HypothesisType(str, Enum):
@@ -67,7 +67,7 @@ class BoundedInvestigationAgent:
         enable_rules: bool = True,
         enable_tools: bool = True,
         allow_abstention: bool = True,
-        vertex_client: Optional[GeminiVertexReconciliationClient] = None
+        vertex_client: Optional[GeminiReconciliationClient] = None
     ):
         self.toolbox = toolbox
         self.max_steps = max_steps
@@ -75,10 +75,9 @@ class BoundedInvestigationAgent:
         self.enable_rules = enable_rules
         self.enable_tools = enable_tools
         self.allow_abstention = allow_abstention
-        self.vertex_client = vertex_client or GeminiVertexReconciliationClient()
+        self.vertex_client = vertex_client or GeminiReconciliationClient()
         self.stopping_policy = InvestigationStoppingPolicy(
-            max_tool_budget=max_steps,
-            min_confidence_threshold=0.80
+            max_tool_budget=max_steps
         )
 
     def investigate(

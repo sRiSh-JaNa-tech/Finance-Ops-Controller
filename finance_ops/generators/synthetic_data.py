@@ -82,6 +82,7 @@ def generate_synthetic_dataset(
         ScenarioTemplate.S13_MISSING_APPROVAL_TOKEN,
         ScenarioTemplate.S14_CANDIDATE_TIE_AMBIGUITY,
         ScenarioTemplate.S15_REPEATED_MICRO_CREDIT_LEAKAGE,
+        ScenarioTemplate.S16_HIDDEN_COMBINED_MUTATION,
     ]
 
     bank_records: List[CanonicalTransaction] = []
@@ -810,6 +811,51 @@ def generate_synthetic_dataset(
                 "candidate_tx_ids": [bank_tx_id],
                 "expected_decision": DecisionLabel.EXCEPTION,
                 "expected_reason": ReasonCode.REVENUE_LEAKAGE_DETECTED,
+                "scenario": scenario.value,
+                "template": scenario.value
+            })
+
+        elif scenario == ScenarioTemplate.S16_HIDDEN_COMBINED_MUTATION:
+            # S16: Combined Fee Adjustment + Timestamp mismatch + Typo (Zero-shot generalization test)
+            gw_tx = CanonicalTransaction(
+                transaction_id=gw_tx_id,
+                source_system=SourceSystem.RAZORPAY,
+                source_record_id=f"gw_{case_idx+1000:04d}",
+                ground_truth_tx_id=gt_tx_id,
+                amount_paise=base_amount_paise,
+                amount=base_dec,
+                currency="INR",
+                txn_timestamp=epoch_ts,
+                merchant_id=merchant["id"],
+                order_id=order_id,
+                raw_narrative=f"Settlement for {merchant['name']}"
+            )
+            # Apply 2% fee deduction, shift timestamp by 3 days, add typo
+            bank_amt = quantize_amount(base_dec * Decimal("0.98"))
+            bank_paise = int(bank_amt * 100)
+            shifted_ts = epoch_ts + (3 * 24 * 3600)
+            
+            bank_tx = CanonicalTransaction(
+                transaction_id=bank_tx_id,
+                source_system=SourceSystem.BANK,
+                source_record_id=f"bnk_{case_idx+1000:04d}",
+                ground_truth_tx_id=gt_tx_id,
+                amount_paise=bank_paise,
+                amount=bank_amt,
+                currency="INR",
+                txn_timestamp=shifted_ts,
+                merchant_id=merchant["id"],
+                order_id=order_id,
+                raw_narrative=f"Setlement {merchant['aliases'][0][:10]} (Fee deducted)"
+            )
+            gateway_records.append(gw_tx)
+            bank_records.append(bank_tx)
+            ground_truth_cases.append({
+                "case_id": f"CASE_{gw_tx_id}",
+                "source_tx_id": gw_tx_id,
+                "candidate_tx_ids": [bank_tx_id],
+                "expected_decision": DecisionLabel.MATCHED,
+                "expected_reason": ReasonCode.FEE_ADJUSTED_MATCH,
                 "scenario": scenario.value,
                 "template": scenario.value
             })

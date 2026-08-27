@@ -28,7 +28,7 @@ from finance_ops.retrieval.graph import FinancialEntityGraph
 from finance_ops.rules.engine import DeterministicRuleEngine
 from finance_ops.rules.constraint_solver import SplitReconciliationSolver, reset_reconciliation_registry
 from finance_ops.evidence.tools import InvestigationToolbox
-from finance_ops.agent.vertex_client import GeminiVertexReconciliationClient
+from finance_ops.agent.vertex_client import GeminiReconciliationClient
 from finance_ops.agent.investigator import BoundedInvestigationAgent
 from finance_ops.decision.verifier import DeterministicPolicyVerifier
 from finance_ops.decision.calibration import ConfidenceCalibrator
@@ -55,7 +55,7 @@ def _build_env(dataset):
         graph.add_transaction_node(r)
 
     toolbox = InvestigationToolbox(repo, blocking, graph, rules, solver)
-    vertex_client = GeminiVertexReconciliationClient()
+    vertex_client = GeminiReconciliationClient()
     agent = BoundedInvestigationAgent(toolbox, max_steps=5, vertex_client=vertex_client)
     verifier = DeterministicPolicyVerifier(repo, rules)
     calibrator = ConfidenceCalibrator()
@@ -102,10 +102,12 @@ def run_benchmark(
 
         honest_exceptions_seed: List[Dict[str, Any]] = []
 
-        for sys_name in system_names:
+        total_cases = len(dataset.ground_truth_cases)
+        for sys_idx, sys_name in enumerate(system_names, start=1):
+            print(f"\n[{sys_idx}/{len(system_names)}] Evaluating {sys_name} ({total_cases} cases)...", flush=True)
             predictions = []
 
-            for case in dataset.ground_truth_cases:
+            for case_num, case in enumerate(dataset.ground_truth_cases, start=1):
                 src_id = case["source_tx_id"]
                 src_tx = repo.get_transaction(src_id)
                 if not src_tx:
@@ -159,6 +161,20 @@ def run_benchmark(
                             "candidate_count": len(candidates),
                         })
 
+                    # Progress log for Gemini agent
+                    tmpl = case.get("template", "SCENARIO")
+                    inv_type = "AI-ReAct" if rec.investigator != "deterministic-cognitive-fallback" else "RuleFallback"
+                    print(
+                        f"  -> Case {case_num:03d}/{total_cases:03d} [{tmpl:<30}] => "
+                        f"{final_dec.decision.value:<9} | {final_dec.reason.value:<28} "
+                        f"({lat*1000:4.0f}ms | {inv_type} | tools: {rec.tool_calls_performed})",
+                        flush=True
+                    )
+
+            if sys_name != "Prototype3_GeminiVertexAgent":
+                total_lat_ms = sum(p["latency_ms"] for p in predictions)
+                print(f"  [+] Completed {total_cases} cases in {total_lat_ms/1000:.3f}s", flush=True)
+
             sys_metrics = metric_engine.evaluate_predictions(predictions, dataset.ground_truth_cases)
             seed_results[sys_name].append(sys_metrics)
 
@@ -171,9 +187,13 @@ def run_benchmark(
         f1_scores = [r["f1_score"] for r in seed_results[sys_name]]
         precisions = [r["precision"] for r in seed_results[sys_name]]
         recalls = [r["recall"] for r in seed_results[sys_name]]
+        triage_f1_scores = [r.get("triage_f1_score", 0.0) for r in seed_results[sys_name]]
+        triage_precisions = [r.get("triage_precision", 0.0) for r in seed_results[sys_name]]
+        triage_recalls = [r.get("triage_recall", 0.0) for r in seed_results[sys_name]]
         fmrs = [r["false_match_rate"] for r in seed_results[sys_name]]
         utilities = [r["cost_weighted_utility"] for r in seed_results[sys_name]]
         auto_rates = [r["automation_rate"] for r in seed_results[sys_name]]
+        cause_accs = [r.get("cause_diagnosis_accuracy", 0.0) for r in seed_results[sys_name]]
 
         # Latency and AI Contribution tracking
         all_latencies = []
@@ -195,16 +215,15 @@ def run_benchmark(
         f1_ci = bootstrap_confidence_interval(np.array(f1_scores))
 
         metrics_obj = {
-            "f1_score": round(float(f1_mean), 4),
-            "f1_score_mean": round(float(f1_mean), 4),
-            "f1_score_ci95": (round(float(f1_ci[0]), 4), round(float(f1_ci[1]), 4)),
-            "precision": round(float(np.mean(precisions)), 4),
-            "recall": round(float(np.mean(recalls)), 4),
+            "match_f1_score": round(float(f1_mean), 4),
+            "match_precision": round(float(np.mean(precisions)), 4),
+            "match_recall": round(float(np.mean(recalls)), 4),
+            "triage_f1_score": round(float(np.mean(triage_f1_scores)), 4),
+            "triage_precision": round(float(np.mean(triage_precisions)), 4),
+            "triage_recall": round(float(np.mean(triage_recalls)), 4),
             "false_match_rate": round(float(np.mean(fmrs)), 4),
-            "false_match_rate_mean": round(float(np.mean(fmrs)), 4),
-            "cause_diagnosis_accuracy_mean": 0.95,
+            "cause_diagnosis_accuracy": round(float(np.mean(cause_accs)), 4),
             "cost_weighted_utility": round(float(np.mean(utilities)), 2),
-            "cost_weighted_utility_mean": round(float(np.mean(utilities)), 2),
             "automation_rate_pct": round(float(np.mean(auto_rates)) * 100, 2),
             "throughput_cases_per_sec": throughput,
             "p95_latency_ms": p95_latency,

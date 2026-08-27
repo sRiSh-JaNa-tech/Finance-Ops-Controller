@@ -21,19 +21,28 @@ def main():
         
         print("\n" + "="*85)
         print("AI FINANCE CONTROLLER: BENCHMARK SUMMARY")
-        print("="*85)
-        print(f"{'System':<24} | {'F1 (95% CI)':<18} | {'False Match %':<14} | {'Cause Diag %':<14} | {'Cost Utility':<12}")
-        print("-"*85)
+        print("="*100)
+        print(f"{'System':<24} | {'Match F1':<10} | {'Triage F1':<10} | {'False Match %':<14} | {'Cause Diag %':<14} | {'Cost Utility':<12}")
+        print("-" * 100)
         
         for sys_name, m in results["systems"].items():
-            f1_str = f"{m['f1_score_mean']*100:.1f}% [{m['f1_score_ci95'][0]*100:.1f}-{m['f1_score_ci95'][1]*100:.1f}]"
-            fmr_str = f"{m['false_match_rate_mean']*100:.1f}%"
-            diag_str = f"{m['cause_diagnosis_accuracy_mean']*100:.1f}%"
-            util_str = f"${m['cost_weighted_utility_mean']:.2f}"
-            print(f"{sys_name:<24} | {f1_str:<18} | {fmr_str:<14} | {diag_str:<14} | {util_str:<12}")
-        print("="*85 + "\n")
+            match_f1_str = f"{m.get('match_f1_score', 0)*100:.1f}%"
+            triage_f1_str = f"{m.get('triage_f1_score', 0)*100:.1f}%"
+            fmr_str = f"{m.get('false_match_rate', 0)*100:.1f}%"
+            diag_str = f"{m.get('cause_diagnosis_accuracy', 0)*100:.1f}%"
+            util_str = f"${m.get('cost_weighted_utility', 0):.2f}"
+            print(f"{sys_name:<24} | {match_f1_str:<10} | {triage_f1_str:<10} | {fmr_str:<14} | {diag_str:<14} | {util_str:<12}")
+        print("="*100)
+        
+        if "blocking_performance" in results:
+            bp = results["blocking_performance"]
+            print("\n[BLOCKING ENGINE METRICS (Phase 1: Learning Blocking Schemes)]")
+            print(f"Candidate Reduction Ratio: {bp.get('avg_reduction_ratio_pct', 0):.2f}%")
+            print(f"Pairs Completeness (Recall): {bp.get('avg_pairs_completeness_pct', 0):.2f}%")
+            print("="*85 + "\n")
 
     elif args.mode == "dashboard":
+        print(f"[+] Mode: CACHED (Dashboard running on cached benchmark results)")
         print(f"[+] Initializing and launching AI Finance Controller Dashboard on http://127.0.0.1:{args.port} ...")
         initialize_demo_state(n_cases=args.cases, seed=args.seeds[0])
         app.run(host="127.0.0.1", port=args.port, debug=False)

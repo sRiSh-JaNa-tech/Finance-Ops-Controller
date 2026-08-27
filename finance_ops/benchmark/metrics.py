@@ -63,29 +63,25 @@ class FinancialReconciliationMetrics:
             - self.cost_e * unexplained_exceptions
         )
 
+
     def evaluate_predictions(
         self,
         predictions: List[Dict[str, Any]],
         ground_truth: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
-        """
-        Computes all core metrics from prediction/ground-truth pairs.
-        Also returns per-scenario breakdown and calibration data.
-        """
-        tp = fp = fn = tn = uncertain_count = 0
+        match_tp = match_fp = match_fn = 0
+        triage_tp = triage_fp = triage_fn = 0
+        uncertain_count = 0
         correct_reason_count = total_evaluable_reasons = 0
         unexplained_exceptions = 0
 
-        # For calibration / AURC
         match_confidences: List[float] = []
         match_labels: List[int] = []
 
-        # Latency and AI Contribution tracking
         latencies_ms: List[float] = []
         llm_investigated = 0
         deterministic_fast_path = 0
 
-        # Per-scenario template tracking
         scenario_stats: Dict[str, Dict[str, int]] = {}
 
         for pred, gt in zip(predictions, ground_truth):
@@ -96,65 +92,56 @@ class FinancialReconciliationMetrics:
             g_reason = gt.get("expected_reason")
             template = gt.get("template", "UNKNOWN")
             
-            # Record Latency and AI contribution
             if "latency_ms" in pred:
                 latencies_ms.append(pred["latency_ms"])
-            if pred.get("investigator") == "gemini-2.5-flash-agent":
+            if pred.get("investigator") == "gemini-native-agent" or pred.get("investigator") == "gemini-2.5-flash-agent":
                 llm_investigated += 1
             elif pred.get("investigator") == "deterministic-cognitive-fallback":
                 deterministic_fast_path += 1
 
-            # Initialize scenario bucket
             if template not in scenario_stats:
-                scenario_stats[template] = {"tp": 0, "fp": 0, "fn": 0, "uncertain": 0, "total": 0}
+                scenario_stats[template] = {"match_tp": 0, "match_fp": 0, "match_fn": 0, "uncertain": 0, "total": 0}
             scenario_stats[template]["total"] += 1
 
-            # Collect calibration data for MATCHED predictions
             if p_dec == DecisionLabel.MATCHED:
-                conf = pred.get("calibrated_confidence", 0.5)
+                conf = pred.get("confidence", pred.get("calibrated_confidence", 0.5))
                 match_confidences.append(conf)
                 is_correct = 1 if (g_dec == DecisionLabel.MATCHED) else 0
                 match_labels.append(is_correct)
 
-            # Count outcomes
+            # Match Quality
             if p_dec == DecisionLabel.MATCHED:
                 if g_dec == DecisionLabel.MATCHED:
                     p_target = set(pred.get("matched_record_ids", []))
                     g_target = set(gt.get("target_record_ids", []))
                     if not g_target or (p_target and p_target.intersection(g_target)):
-                        tp += 1
-                        scenario_stats[template]["tp"] += 1
+                        match_tp += 1
+                        scenario_stats[template]["match_tp"] += 1
                     else:
-                        fp += 1
-                        scenario_stats[template]["fp"] += 1
+                        match_fp += 1
+                        scenario_stats[template]["match_fp"] += 1
                 else:
-                    # False Match (erroneous ledger reconciliation on non-matching pair)
-                    fp += 1
-                    scenario_stats[template]["fp"] += 1
+                    match_fp += 1
+                    scenario_stats[template]["match_fp"] += 1
+            elif g_dec == DecisionLabel.MATCHED:
+                match_fn += 1
+                scenario_stats[template]["match_fn"] += 1
 
-            elif p_dec == DecisionLabel.EXCEPTION:
+            # Triage Quality (Exception Detection)
+            if p_dec == DecisionLabel.EXCEPTION:
                 if g_dec == DecisionLabel.EXCEPTION:
-                    tp += 1
-                    scenario_stats[template]["tp"] += 1
-                elif g_dec == DecisionLabel.MATCHED:
-                    # Missed a valid match by declaring an exception
-                    fn += 1
-                    unexplained_exceptions += 1
-                    scenario_stats[template]["fn"] += 1
+                    triage_tp += 1
                 else:
-                    fn += 1
-                    scenario_stats[template]["fn"] += 1
+                    triage_fp += 1
+                    if g_dec == DecisionLabel.MATCHED:
+                        unexplained_exceptions += 1
+            elif g_dec == DecisionLabel.EXCEPTION:
+                triage_fn += 1
 
-            elif p_dec == DecisionLabel.UNCERTAIN:
+            if p_dec == DecisionLabel.UNCERTAIN:
                 uncertain_count += 1
                 scenario_stats[template]["uncertain"] += 1
-                if g_dec == DecisionLabel.UNCERTAIN:
-                    tp += 1
-                elif g_dec == DecisionLabel.MATCHED:
-                    fn += 1
-                    scenario_stats[template]["fn"] += 1
 
-            # Reason code diagnosis
             if p_reason and g_reason:
                 total_evaluable_reasons += 1
                 p_val = p_reason.value if hasattr(p_reason, "value") else str(p_reason)
@@ -163,18 +150,27 @@ class FinancialReconciliationMetrics:
                     correct_reason_count += 1
 
         n_total = len(ground_truth)
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-        fmr = fp / n_total if n_total > 0 else 0.0
+        
+        match_prec = match_tp / (match_tp + match_fp) if (match_tp + match_fp) > 0 else 0.0
+        match_rec = match_tp / (match_tp + match_fn) if (match_tp + match_fn) > 0 else 0.0
+        match_f1 = 2 * (match_prec * match_rec) / (match_prec + match_rec) if (match_prec + match_rec) > 0 else 0.0
+        
+        triage_prec = triage_tp / (triage_tp + triage_fp) if (triage_tp + triage_fp) > 0 else 0.0
+        triage_rec = triage_tp / (triage_tp + triage_fn) if (triage_tp + triage_fn) > 0 else 0.0
+        triage_f1 = 2 * (triage_prec * triage_rec) / (triage_prec + triage_rec) if (triage_prec + triage_rec) > 0 else 0.0
+
+        # Legacy variables for compatibility
+        tp, fp, fn = match_tp, match_fp, match_fn
+        precision, recall, f1 = match_prec, match_rec, match_f1
+
+        fmr = match_fp / n_total if n_total > 0 else 0.0
         automation_rate = (n_total - uncertain_count) / n_total if n_total > 0 else 0.0
         reason_acc = correct_reason_count / total_evaluable_reasons if total_evaluable_reasons > 0 else 0.0
         utility = self.compute_cost_weighted_utility(tp, fp, fn, uncertain_count, unexplained_exceptions)
 
-        # Scenario-level precision/recall
         scenario_breakdown = {}
         for tmpl, stats in scenario_stats.items():
-            t, f, miss, unc = stats["tp"], stats["fp"], stats["fn"], stats["uncertain"]
+            t, f, miss, unc = stats["match_tp"], stats["match_fp"], stats["match_fn"], stats["uncertain"]
             s_prec = t / (t + f) if (t + f) > 0 else 0.0
             s_rec = t / (t + miss) if (t + miss) > 0 else 0.0
             scenario_breakdown[tmpl] = {
@@ -183,6 +179,33 @@ class FinancialReconciliationMetrics:
                 "precision": round(s_prec, 4),
                 "recall": round(s_rec, 4),
             }
+
+        return {
+            "total_cases": n_total,
+            "true_positives": match_tp,
+            "false_positives": match_fp,
+            "false_negatives": match_fn,
+            "triage_true_positives": triage_tp,
+            "triage_false_positives": triage_fp,
+            "triage_false_negatives": triage_fn,
+            "uncertain_cases": uncertain_count,
+            "precision": float(match_prec),
+            "recall": float(match_rec),
+            "f1_score": float(match_f1),
+            "triage_precision": float(triage_prec),
+            "triage_recall": float(triage_rec),
+            "triage_f1_score": float(triage_f1),
+            "false_match_rate": float(fmr),
+            "automation_rate": float(automation_rate),
+            "cause_diagnosis_accuracy": float(reason_acc),
+            "cost_weighted_utility": float(utility),
+            "scenario_breakdown": scenario_breakdown,
+            "latencies_ms": latencies_ms,
+            "llm_investigated": llm_investigated,
+            "deterministic_fast_path": deterministic_fast_path,
+            "_match_confidences": match_confidences,
+            "_match_labels": match_labels,
+        }
 
         return {
             "total_cases": n_total,
@@ -219,7 +242,7 @@ def bootstrap_confidence_interval(
     """
     Returns (mean, lower_95ci, upper_95ci) using percentile bootstrap.
     """
-    if not values:
+    if len(values) == 0:
         return 0.0, 0.0, 0.0
     arr = np.array(values)
     mean_val = float(np.mean(arr))

@@ -92,8 +92,18 @@ class DeterministicPolicyVerifier:
         is_automated = False
         requires_human = False
 
+        # Phase 3: Context-Adaptive Risk Thresholds (Instance-Specific Abstention)
+        if reason == ReasonCode.EXACT_IDENTIFIER_MATCH:
+            dynamic_threshold = max(0.90, auto_match_threshold)
+        elif reason in [ReasonCode.FEE_ADJUSTED_MATCH, ReasonCode.SPLIT_PAYMENT_MATCH]:
+            dynamic_threshold = max(0.95, auto_match_threshold)
+        elif reason == ReasonCode.FUZZY_ENTITY_MATCH:
+            dynamic_threshold = 0.99 # Fuzzy matches need high certainty
+        else:
+            dynamic_threshold = max(0.92, auto_match_threshold)
+
         if decision == DecisionLabel.MATCHED:
-            if calibrated_confidence >= auto_match_threshold and is_verified:
+            if calibrated_confidence >= dynamic_threshold and is_verified:
                 is_automated = True
                 requires_human = False
             else:
@@ -102,7 +112,7 @@ class DeterministicPolicyVerifier:
                 is_automated = False
                 requires_human = True
                 is_verified = False
-                verifier_notes.append(f"Escalated to Human Review: confidence {calibrated_confidence:.2f} < threshold {auto_match_threshold:.2f}")
+                verifier_notes.append(f"Escalated to Human Review: confidence {calibrated_confidence:.2f} < context threshold {dynamic_threshold:.2f}")
         elif decision == DecisionLabel.EXCEPTION:
             is_automated = True
             requires_human = False

@@ -3,14 +3,15 @@
 from typing import Dict, List, Optional, Tuple
 from finance_ops.core.models import DecisionLabel, ReasonCode, AgentRecommendation, CanonicalTransaction
 from finance_ops.evidence.bundle import EvidenceBundle
+from finance_ops.decision.calibration import AsymmetricDecisionPolicy
 
 
 class InvestigationStoppingPolicy:
     """Evaluates whether the agent has collected conclusive evidence or should terminate."""
 
-    def __init__(self, max_tool_budget: int = 5, min_confidence_threshold: float = 0.80):
+    def __init__(self, max_tool_budget: int = 5):
         self.max_tool_budget = max_tool_budget
-        self.min_confidence_threshold = min_confidence_threshold
+        self.policy = AsymmetricDecisionPolicy(cost_false_match=500.0, cost_human_review=10.0, cost_missed_match=50.0)
 
     def evaluate_state(
         self,

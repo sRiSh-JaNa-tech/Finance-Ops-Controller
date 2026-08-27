@@ -22,6 +22,11 @@ from finance_ops.core.models import (
 )
 from finance_ops.evidence.tools import InvestigationToolbox
 
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
+from finance_ops.agent.langchain_tools import create_agent_tools
+from finance_ops.agent.langgraph_agent import create_agent_graph, InvestigationState
+
 logger = logging.getLogger(__name__)
 
 # Vertex AI OpenAPI Tool Declarations
@@ -172,7 +177,7 @@ def _normalize_decision_label(raw_decision: str) -> DecisionLabel:
     return DecisionLabel.UNCERTAIN
 
 
-class GeminiVertexReconciliationClient:
+class GeminiReconciliationClient:
     """
     Client for orchestrating Google Gemini / Vertex AI for autonomous financial reconciliation.
     Performs live LLM reasoning when credentials are provided, with zero-config deterministic fallback.
@@ -192,8 +197,8 @@ class GeminiVertexReconciliationClient:
         
         self.has_credentials = bool(self.api_key or (self.project_id and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")))
 
-    def call_gemini_api(self, prompt: str, system_instruction: Optional[str] = None) -> Optional[str]:
-        """Calls Google Gemini API using REST or SDK."""
+
+    def call_gemini_api_native(self, messages: List[Dict[str, Any]], system_instruction: Optional[str] = None) -> Optional[Dict[str, Any]]:
         if not self.api_key:
             return None
 
@@ -201,9 +206,9 @@ class GeminiVertexReconciliationClient:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model_name}:generateContent?key={self.api_key}"
         
         payload: Dict[str, Any] = {
-            "contents": [{"parts": [{"text": prompt}]}],
+            "contents": messages,
+            "tools": [{"functionDeclarations": VERTEX_TOOL_DECLARATIONS}],
             "generationConfig": {
-                "response_mime_type": "application/json",
                 "temperature": 0.1
             }
         }
@@ -216,34 +221,28 @@ class GeminiVertexReconciliationClient:
             headers={"Content-Type": "application/json"}
         )
         
-        prompt_preview = prompt[:100].replace('\n', ' ') + "..."
-        payload_size = len(json.dumps(payload))
-        logger.info(f"Gemini API Request: model={self.model_name}, payload_size={payload_size} bytes, preview='{prompt_preview}'")
-        
         start_time = time.time()
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
                 resp_bytes = response.read()
                 elapsed = time.time() - start_time
-                logger.info(f"Gemini API Response received in {elapsed:.2f}s")
                 res = json.loads(resp_bytes.decode("utf-8"))
                 
-                # Respect Google Gemini Free Tier 15 RPM limit (1 request per 4s)
+                # We separate AI latency tracking from rate limiting sleep
+                if not hasattr(self, "_ai_latency_acc"):
+                    self._ai_latency_acc = 0.0
+                self._ai_latency_acc += elapsed
+                
                 time.sleep(4)
                 
-                return res["candidates"][0]["content"]["parts"][0]["text"]
-        except urllib.error.HTTPError as e:
-            elapsed = time.time() - start_time
-            err_body = e.read().decode("utf-8")
-            logger.error(f"Gemini HTTPError {e.code} after {elapsed:.2f}s: {err_body}")
-            print(f"[API ERROR] HTTP {e.code}: {err_body}")
-            return None
+                if "candidates" not in res or not res["candidates"]:
+                    return None
+                
+                part = res["candidates"][0]["content"]["parts"][0]
+                return part
         except Exception as e:
-            elapsed = time.time() - start_time
-            logger.warning(f"Gemini API invocation encountered error ({type(e).__name__}): {e} after {elapsed:.2f}s. Utilizing verified cognitive fallback.")
-            print(f"[API ERROR] {type(e).__name__}: {e} after {elapsed:.2f}s")
-            return None
-
+            logger.warning(f"Gemini API invocation error: {e}")
+            return {"error": str(e)}
     def execute_tool(self, toolbox: InvestigationToolbox, tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatches tool call to the local deterministic toolbox."""
         if tool_name == "run_financial_rules":
@@ -282,6 +281,7 @@ class GeminiVertexReconciliationClient:
         else:
             return {"status": "ERROR", "message": f"Unknown tool name: {tool_name}"}
 
+
     def _investigate_with_gemini(
         self,
         case_id: str,
@@ -290,109 +290,107 @@ class GeminiVertexReconciliationClient:
         toolbox: InvestigationToolbox,
         rule_res: Dict[str, Any]
     ) -> Optional[AgentRecommendation]:
-        """Performs live LLM-driven reconciliation investigation via Google Gemini."""
         if not self.has_credentials:
             return None
 
-        # Build comprehensive investigation context
         cand_summaries = []
         for c in candidates:
             cand_summaries.append({
                 "transaction_id": c.transaction_id,
-                "source_system": str(c.source_system),
-                "amount_inr": float(c.amount),
                 "amount_paise": c.amount_paise,
                 "narrative": c.raw_narrative,
                 "invoice_reference": c.invoice_reference,
                 "utr": c.utr,
-                "order_id": c.order_id,
                 "is_refund": c.is_refund,
                 "is_reversal": c.is_reversal,
-                "approval_code": c.approval_code,
-                "timestamp": str(c.transaction_timestamp)
             })
 
         prompt_payload = {
             "case_id": case_id,
             "source_transaction": {
                 "transaction_id": source_tx.transaction_id,
-                "source_system": str(source_tx.source_system),
-                "amount_inr": float(source_tx.amount),
                 "amount_paise": source_tx.amount_paise,
                 "narrative": source_tx.raw_narrative,
                 "invoice_reference": source_tx.invoice_reference,
                 "utr": source_tx.utr,
-                "order_id": source_tx.order_id,
                 "is_refund": source_tx.is_refund,
                 "is_reversal": source_tx.is_reversal,
-                "approval_code": source_tx.approval_code,
-                "timestamp": str(source_tx.transaction_timestamp)
             },
-            "candidate_counterparty_records": cand_summaries,
-            "deterministic_rule_pre_evaluation": {
-                "passed_rules": rule_res.get("passed_rules", []),
-                "failed_rules": rule_res.get("failed_rules", []),
-                "warned_rules": rule_res.get("warned_rules", []),
-                "leakage_risk": rule_res.get("leakage_risk", 0.0)
-            }
+            "candidates": cand_summaries,
+            "deterministic_rule_pre_evaluation": rule_res
         }
 
-        prompt_text = (
-            "Perform an autonomous financial reconciliation investigation on this case.\n\n"
-            f"Case Data:\n{json.dumps(prompt_payload, indent=2)}\n\n"
-            "Formulate and evaluate competing hypotheses. Return strictly the JSON decision object."
-        )
-
-        response_text = self.call_gemini_api(prompt_text, system_instruction=SYSTEM_PROMPT)
-        if not response_text:
-            return None
-
         try:
-            # Clean markdown codeblocks if present
-            clean_json = response_text.strip()
-            if clean_json.startswith("```json"):
-                clean_json = clean_json[7:]
-            if clean_json.startswith("```"):
-                clean_json = clean_json[3:]
-            if clean_json.endswith("```"):
-                clean_json = clean_json[:-3]
-            clean_json = clean_json.strip()
-
-            data = json.loads(clean_json)
-
-            decision = _normalize_decision_label(data.get("recommended_decision", "UNCERTAIN"))
-            reason = _normalize_reason_code(data.get("primary_reason", "BELOW_CONFIDENCE_THRESHOLD"))
-            conf = float(data.get("confidence_score", 0.85))
-            explanation = str(data.get("explanation_narrative", "Reconciliation decision generated by Gemini agent."))
-            matched_ids = [str(x) for x in data.get("matched_record_ids", [])]
-            cited_ids = [str(x) for x in data.get("cited_evidence_ids", [source_tx.transaction_id])]
-            hypotheses = [str(x) for x in data.get("investigation_hypotheses_tested", [reason.value])]
-            unresolved = [str(x) for x in data.get("unresolved_questions", [])]
-
+            llm = ChatGoogleGenerativeAI(model="gemini-3.1-pro-preview", temperature=0.0)
+            tools = create_agent_tools(toolbox)
+            graph = create_agent_graph(llm, tools)
+            
+            system_prompt = SYSTEM_PROMPT + "\\n\\nIMPORTANT: You have access to tools. If you need to test a hypothesis (e.g. FEE_MDR), YOU MUST call test_reconciliation_hypothesis. Do not guess. You can call tools multiple times. Once you are ready to conclude, output the final JSON block starting with ```json."
+            
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=f"Investigate this case. Call tools to gather evidence. Return final JSON when done.\\n{json.dumps(prompt_payload)}")
+            ]
+            
+            final_state = graph.invoke({"messages": messages, "case_id": case_id, "error": None})
+            
+            if final_state.get("error"):
+                raise Exception(final_state["error"])
+                
+            tool_call_sequence = []
+            for msg in final_state["messages"]:
+                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                    for tc in msg.tool_calls:
+                        tool_call_sequence.append(tc.get("name", "unknown_tool"))
+                        
+            final_msg = final_state["messages"][-1]
+            text = final_msg.content
+            if isinstance(text, str) and "```json" in text:
+                clean_json = text.split("```json")[1].split("```")[0].strip()
+                data = json.loads(clean_json)
+                decision = _normalize_decision_label(data.get("recommended_decision", "UNCERTAIN"))
+                reason = _normalize_reason_code(data.get("primary_reason", "BELOW_CONFIDENCE_THRESHOLD"))
+                conf = float(data.get("confidence_score", 0.50))
+                
+                return AgentRecommendation(
+                    case_id=case_id,
+                    recommended_decision=decision,
+                    primary_reason=reason,
+                    cited_evidence_ids=data.get("cited_evidence_ids", [source_tx.transaction_id]),
+                    matched_record_ids=data.get("matched_record_ids", []),
+                    unresolved_questions=data.get("unresolved_questions", []),
+                    confidence_score=min(1.0, max(0.0, conf)),
+                    fuzzy_score=0.90,
+                    leakage_risk=0.0,
+                    rules_passed=[],
+                    rules_failed=[],
+                    rules_warned=[],
+                    explanation_narrative=data.get("explanation_narrative", ""),
+                    tool_calls_performed=len(tool_call_sequence),
+                    tool_call_sequence=tool_call_sequence,
+                    investigation_hypotheses_tested=data.get("investigation_hypotheses_tested", []),
+                    human_review_required=(decision == DecisionLabel.UNCERTAIN),
+                    investigator="gemini-langgraph-agent"
+                )
+                
+        except Exception as e:
+            logger.error(f"LangGraph Agent Error: {e}")
             return AgentRecommendation(
                 case_id=case_id,
-                recommended_decision=decision,
-                primary_reason=reason,
-                cited_evidence_ids=cited_ids,
-                matched_record_ids=matched_ids,
-                unresolved_questions=unresolved,
-                confidence_score=min(1.0, max(0.0, conf)),
-                fuzzy_score=0.95 if decision == DecisionLabel.MATCHED else 0.50,
-                leakage_risk=rule_res.get("leakage_risk", 0.0),
-                rules_passed=rule_res.get("passed_rules", []),
-                rules_failed=rule_res.get("failed_rules", []),
-                rules_warned=rule_res.get("warned_rules", []),
-                explanation_narrative=f"[Gemini Agent] {explanation}",
-                tool_calls_performed=2,
-                tool_call_sequence=["run_financial_rules", "inspect_entity_graph"],
-                investigation_hypotheses_tested=hypotheses,
-                human_review_required=(decision == DecisionLabel.UNCERTAIN),
-                investigator="gemini-2.5-flash-agent"
+                recommended_decision=DecisionLabel.UNCERTAIN,
+                primary_reason=ReasonCode.BELOW_CONFIDENCE_THRESHOLD,
+                cited_evidence_ids=[source_tx.transaction_id],
+                confidence_score=0.0,
+                fuzzy_score=0.0,
+                leakage_risk=0.0,
+                explanation_narrative=f"LLM API Error: {e}",
+                tool_calls_performed=0,
+                tool_call_sequence=[],
+                investigator="gemini-error-fallback",
+                human_review_required=True
             )
-        except Exception as e:
-            logger.warning(f"Failed to parse Gemini response as structured JSON: {e}")
-            return None
-
+            
+        return None
     def investigate_case(
         self,
         case_id: str,
@@ -629,3 +627,8 @@ class GeminiVertexReconciliationClient:
             human_review_required=True,
             investigator="deterministic-cognitive-fallback"
         )
+
+
+# Backwards compatibility alias
+GeminiVertexReconciliationClient = GeminiReconciliationClient
+

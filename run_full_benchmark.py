@@ -55,20 +55,28 @@ def run_full_benchmark():
     
     # Formatting metrics
     match_rate = p3_stats['automation_rate_pct']
-    prec = p3_stats['precision'] * 100
-    rec = p3_stats['recall'] * 100
-    f1 = p3_stats['f1_score'] * 100
+    prec = p3_stats['match_precision'] * 100
+    rec = p3_stats['match_recall'] * 100
+    f1 = p3_stats['match_f1_score'] * 100
+    triage_f1 = p3_stats['triage_f1_score'] * 100
     fmr = p3_stats['false_match_rate'] * 100
 
     print(f"MATCH RATE: {match_rate:.1f}%")
-    print(f"PRECISION: {prec:.1f}%, RECALL: {rec:.1f}%, F1: {f1:.1f}%, FALSE MATCH RATE: {fmr:.1f}%")
+    print(f"MATCH QUALITY:  PRECISION: {prec:.1f}%, RECALL: {rec:.1f}%, F1: {f1:.1f}%, FALSE MATCH RATE: {fmr:.1f}%")
+    print(f"TRIAGE QUALITY: F1: {triage_f1:.1f}%")
+
+    if "blocking_performance" in results:
+        bp = results["blocking_performance"]
+        print(f"\nBLOCKING ENGINE (Phase 1):")
+        print(f"  Candidate Reduction Ratio: {bp.get('avg_reduction_ratio_pct', 0):.2f}%")
+        print(f"  Pairs Completeness: {bp.get('avg_pairs_completeness_pct', 0):.2f}%")
 
     print(f"\nTHROUGHPUT:")
     print(f"  {cases_per_batch} cases")
     print(f"  {p3_stats.get('throughput_cases_per_sec', 0)} cases/sec")
     print(f"  p95 latency: {p3_stats.get('p95_latency_ms', 0)} ms")
 
-    baseline_recall = rule_stats['recall'] * 100
+    baseline_recall = rule_stats.get('match_recall', rule_stats.get('recall', 0)) * 100
     improvement = rec - baseline_recall
 
     print(f"\nAI CONTRIBUTION:")
