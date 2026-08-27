@@ -8,6 +8,7 @@ zero-config deterministic fallback.
 import os
 import json
 import logging
+import time
 from typing import Dict, List, Any, Optional, Tuple
 
 try:
@@ -214,12 +215,33 @@ class GeminiVertexReconciliationClient:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
+        
+        prompt_preview = prompt[:100].replace('\n', ' ') + "..."
+        payload_size = len(json.dumps(payload))
+        logger.info(f"Gemini API Request: model={self.model_name}, payload_size={payload_size} bytes, preview='{prompt_preview}'")
+        
+        start_time = time.time()
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                res = json.loads(response.read().decode("utf-8"))
+            with urllib.request.urlopen(req, timeout=30) as response:
+                resp_bytes = response.read()
+                elapsed = time.time() - start_time
+                logger.info(f"Gemini API Response received in {elapsed:.2f}s")
+                res = json.loads(resp_bytes.decode("utf-8"))
+                
+                # Respect Google Gemini Free Tier 15 RPM limit (1 request per 4s)
+                time.sleep(4)
+                
                 return res["candidates"][0]["content"]["parts"][0]["text"]
+        except urllib.error.HTTPError as e:
+            elapsed = time.time() - start_time
+            err_body = e.read().decode("utf-8")
+            logger.error(f"Gemini HTTPError {e.code} after {elapsed:.2f}s: {err_body}")
+            print(f"[API ERROR] HTTP {e.code}: {err_body}")
+            return None
         except Exception as e:
-            logger.warning(f"Gemini API invocation encountered error: {e}. Utilizing verified cognitive fallback.")
+            elapsed = time.time() - start_time
+            logger.warning(f"Gemini API invocation encountered error ({type(e).__name__}): {e} after {elapsed:.2f}s. Utilizing verified cognitive fallback.")
+            print(f"[API ERROR] {type(e).__name__}: {e} after {elapsed:.2f}s")
             return None
 
     def execute_tool(self, toolbox: InvestigationToolbox, tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:

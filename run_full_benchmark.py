@@ -5,7 +5,13 @@ and exports benchmark metrics to benchmark_results.json.
 """
 
 import json
+import logging
 from finance_ops.benchmark.runner import run_benchmark
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 
 def print_banner(title: str) -> None:
