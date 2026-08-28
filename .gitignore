@@ -17,13 +17,12 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Logs and Data
+# Logs, Dumps, and Benchmark Artifacts
 *.log
+*_output.txt
 benchmark_results.json
-scripts/.pdf_rename_state.json
-
-# LLM Crawler generated dump
 llms-full.txt
+prototype*.txt
 
 # Editor directories and files
 .idea/
