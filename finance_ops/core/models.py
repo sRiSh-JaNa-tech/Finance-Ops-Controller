@@ -306,6 +306,7 @@ class AgentRecommendation(BaseModel):
     investigation_hypotheses_tested: List[str] = Field(default_factory=list)
     human_review_required: bool = False
     investigator: str = "deterministic-fast-path"
+    usage_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class FinalDecisionRecord(BaseModel):
@@ -332,6 +333,7 @@ class FinalDecisionRecord(BaseModel):
     verifier_notes: List[str] = Field(default_factory=list)
     explanation: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    usage_metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
     
     # Human Review Annotation if applicable
     human_reviewer_id: Optional[str] = None

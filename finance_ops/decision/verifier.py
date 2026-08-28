@@ -165,5 +165,6 @@ class DeterministicPolicyVerifier:
             tool_calls_count=recommendation.tool_calls_performed,
             verifier_status=status,
             verifier_notes=verifier_notes,
-            explanation=recommendation.explanation_narrative
+            explanation=recommendation.explanation_narrative,
+            usage_metadata=getattr(recommendation, 'usage_metadata', {})
         )

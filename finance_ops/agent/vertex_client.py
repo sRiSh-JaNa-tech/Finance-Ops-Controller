@@ -339,10 +339,23 @@ class GeminiReconciliationClient:
                 raise Exception(final_state["error"])
                 
             tool_call_sequence = []
+            total_input_tokens = 0
+            total_output_tokens = 0
+            
             for msg in final_state["messages"]:
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
                     for tc in msg.tool_calls:
                         tool_call_sequence.append(tc.get("name", "unknown_tool"))
+                
+                # Extract token usage from AI messages
+                if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                    total_input_tokens += msg.usage_metadata.get("input_tokens", 0)
+                    total_output_tokens += msg.usage_metadata.get("output_tokens", 0)
+                elif hasattr(msg, "response_metadata") and msg.response_metadata and "token_usage" in msg.response_metadata:
+                    tu = msg.response_metadata["token_usage"]
+                    if hasattr(tu, "prompt_token_count"):
+                        total_input_tokens += tu.prompt_token_count
+                        total_output_tokens += tu.candidates_token_count
                         
             final_msg = final_state["messages"][-1]
             text = final_msg.content
@@ -391,7 +404,12 @@ class GeminiReconciliationClient:
                     tool_call_sequence=tool_call_sequence,
                     investigation_hypotheses_tested=data.get("investigation_hypotheses_tested", []),
                     human_review_required=(decision == DecisionLabel.UNCERTAIN),
-                    investigator="gemini-langgraph-agent"
+                    investigator="gemini-langgraph-agent",
+                    usage_metadata={
+                        "input_tokens": total_input_tokens,
+                        "output_tokens": total_output_tokens,
+                        "total_tokens": total_input_tokens + total_output_tokens,
+                    }
                 )
                 
         except Exception as e:

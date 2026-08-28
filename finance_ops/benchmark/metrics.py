@@ -5,30 +5,24 @@ Core Metrics:
   - Precision, Recall, F1, False-Match Rate
   - Cause-Diagnosis Accuracy (multi-class reason code accuracy)
   - Automation Rate (fraction of cases auto-processed)
-  - Cost-Weighted Utility: U = B·TP - c_FP·FP - c_FN·FN - c_U·Uncertain - c_E·Unexplained
-  - AURC (Area Under Risk-Coverage Curve)
-  - Bootstrap 95% Confidence Intervals
-
-Utility parameters (from implementation plan):
-  B     = $25    (benefit per correct automated match)
-  c_FP  = $500   (cost of a false automatic match)
-  c_FN  = $50    (cost of a missed real match)
-  c_U   = $10    (cost of routing to human review)
-  c_E   = $50    (cost of unexplained exception)
+  - Cost-Weighted Utility
+  - False Match Amount (FMA)
+  - Amount-weighted accuracy
+  - AI Value and Escalation rates
+  - Cost tracking via MODEL_PRICING
 """
 
 import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from finance_ops.core.models import DecisionLabel
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Core Metric Engine
-# ─────────────────────────────────────────────────────────────────────────────
+MODEL_PRICING = {
+    "gemini-3.7-flash": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
+    "gemini-1.5-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
+    "gemini-1.5-pro": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
+}
 
 class FinancialReconciliationMetrics:
-    """Research-grade evaluation metrics for financial reconciliation benchmarking."""
-
     def __init__(
         self,
         benefit_per_correct_match: float = 25.0,
@@ -43,40 +37,26 @@ class FinancialReconciliationMetrics:
         self.cost_u = cost_human_review
         self.cost_e = cost_unexplained_exception
 
-    def compute_cost_weighted_utility(
-        self,
-        tp: int,
-        fp: int,
-        fn: int,
-        uncertain_count: int,
-        unexplained_exceptions: int = 0
-    ) -> float:
-        """
-        Cost-Weighted Utility:
-            U = B·TP - c_FP·FP - c_FN·FN - c_U·Uncertain - c_E·Unexplained
-        """
-        return float(
-            self.benefit_tp * tp
-            - self.cost_fp * fp
-            - self.cost_fn * fn
-            - self.cost_u * uncertain_count
-            - self.cost_e * unexplained_exceptions
-        )
-
-
     def evaluate_predictions(
         self,
         predictions: List[Dict[str, Any]],
-        ground_truth: List[Dict[str, Any]]
+        ground_truth: List[Dict[str, Any]],
+        model_name: str = "gemini-3.7-flash"
     ) -> Dict[str, Any]:
         match_tp = match_fp = match_fn = 0
         triage_tp = triage_fp = triage_fn = 0
         uncertain_count = 0
         correct_reason_count = total_evaluable_reasons = 0
         unexplained_exceptions = 0
-
-        match_confidences: List[float] = []
-        match_labels: List[int] = []
+        
+        false_match_amount = 0.0
+        total_amount = 0.0
+        correct_amount = 0.0
+        
+        ai_escalations = 0
+        ai_resolutions = 0
+        ai_tokens_input = 0
+        ai_tokens_output = 0
 
         latencies_ms: List[float] = []
         llm_investigated = 0
@@ -84,19 +64,44 @@ class FinancialReconciliationMetrics:
 
         scenario_stats: Dict[str, Dict[str, int]] = {}
 
+        # Multiclass matrix [Expected][Predicted]
+        confusion_matrix = {
+            DecisionLabel.MATCHED.value: {DecisionLabel.MATCHED.value: 0, DecisionLabel.EXCEPTION.value: 0, DecisionLabel.UNCERTAIN.value: 0},
+            DecisionLabel.EXCEPTION.value: {DecisionLabel.MATCHED.value: 0, DecisionLabel.EXCEPTION.value: 0, DecisionLabel.UNCERTAIN.value: 0},
+            DecisionLabel.UNCERTAIN.value: {DecisionLabel.MATCHED.value: 0, DecisionLabel.EXCEPTION.value: 0, DecisionLabel.UNCERTAIN.value: 0},
+        }
+        
+        # for bootstrapping F1 over cases
+        case_records = []
+
         for pred, gt in zip(predictions, ground_truth):
             p_dec = pred["decision"]
             g_dec = gt["expected_decision"]
+            if hasattr(p_dec, "value"): p_dec = p_dec.value
+            if hasattr(g_dec, "value"): g_dec = g_dec.value
 
             p_reason = pred.get("reason")
             g_reason = gt.get("expected_reason")
             template = gt.get("template", "UNKNOWN")
             
+            amount = pred.get("amount", 0.0)
+            if hasattr(amount, "__float__"): amount = float(amount)
+            total_amount += amount
+            
             if "latency_ms" in pred:
                 latencies_ms.append(pred["latency_ms"])
+            
+            usage = pred.get("usage_metadata", {})
+            in_t = usage.get("input_tokens", 0)
+            out_t = usage.get("output_tokens", 0)
+                
             inv_str = str(pred.get("investigator", ""))
-            if bool(inv_str and ("gemini" in inv_str or "ai" in inv_str) and "fallback" not in inv_str and "fast-path" not in inv_str):
+            is_ai = bool(inv_str and ("gemini" in inv_str or "ai" in inv_str) and "fallback" not in inv_str and "fast-path" not in inv_str)
+            if is_ai:
                 llm_investigated += 1
+                ai_escalations += 1
+                ai_tokens_input += in_t
+                ai_tokens_output += out_t
             else:
                 deterministic_fast_path += 1
 
@@ -104,42 +109,47 @@ class FinancialReconciliationMetrics:
                 scenario_stats[template] = {"match_tp": 0, "match_fp": 0, "match_fn": 0, "uncertain": 0, "total": 0}
             scenario_stats[template]["total"] += 1
 
-            if p_dec == DecisionLabel.MATCHED:
-                conf = pred.get("confidence", pred.get("calibrated_confidence", 0.5))
-                match_confidences.append(conf)
-                is_correct = 1 if (g_dec == DecisionLabel.MATCHED) else 0
-                match_labels.append(is_correct)
+            try:
+                confusion_matrix[g_dec][p_dec] += 1
+            except KeyError:
+                pass
 
-            # Match Quality
-            if p_dec == DecisionLabel.MATCHED:
-                if g_dec == DecisionLabel.MATCHED:
+            is_correct_case = False
+
+            if p_dec == DecisionLabel.MATCHED.value:
+                if g_dec == DecisionLabel.MATCHED.value:
                     p_target = set(pred.get("matched_record_ids", []))
-                    g_target = set(gt.get("target_record_ids", []))
+                    g_target = set(gt.get("target_record_ids", gt.get("candidate_tx_ids", [])))
                     if not g_target or (p_target and p_target.intersection(g_target)):
                         match_tp += 1
                         scenario_stats[template]["match_tp"] += 1
+                        correct_amount += amount
+                        is_correct_case = True
                     else:
                         match_fp += 1
                         scenario_stats[template]["match_fp"] += 1
+                        false_match_amount += amount
                 else:
                     match_fp += 1
                     scenario_stats[template]["match_fp"] += 1
-            elif g_dec == DecisionLabel.MATCHED:
+                    false_match_amount += amount
+            elif g_dec == DecisionLabel.MATCHED.value:
                 match_fn += 1
                 scenario_stats[template]["match_fn"] += 1
 
-            # Triage Quality (Exception Detection)
-            if p_dec == DecisionLabel.EXCEPTION:
-                if g_dec == DecisionLabel.EXCEPTION:
+            if p_dec == DecisionLabel.EXCEPTION.value:
+                if g_dec == DecisionLabel.EXCEPTION.value:
                     triage_tp += 1
+                    correct_amount += amount
+                    is_correct_case = True
                 else:
                     triage_fp += 1
-                    if g_dec == DecisionLabel.MATCHED:
+                    if g_dec == DecisionLabel.MATCHED.value:
                         unexplained_exceptions += 1
-            elif g_dec == DecisionLabel.EXCEPTION:
+            elif g_dec == DecisionLabel.EXCEPTION.value:
                 triage_fn += 1
 
-            if p_dec == DecisionLabel.UNCERTAIN:
+            if p_dec == DecisionLabel.UNCERTAIN.value:
                 uncertain_count += 1
                 scenario_stats[template]["uncertain"] += 1
 
@@ -149,6 +159,16 @@ class FinancialReconciliationMetrics:
                 g_val = g_reason.value if hasattr(g_reason, "value") else str(g_reason)
                 if p_val == g_val:
                     correct_reason_count += 1
+                    
+            if is_ai and is_correct_case:
+                ai_resolutions += 1
+                
+            case_records.append({
+                "p_dec": p_dec,
+                "g_dec": g_dec,
+                "is_correct_case": is_correct_case
+            })
+
 
         n_total = len(ground_truth)
         
@@ -160,14 +180,38 @@ class FinancialReconciliationMetrics:
         triage_rec = triage_tp / (triage_tp + triage_fn) if (triage_tp + triage_fn) > 0 else 0.0
         triage_f1 = 2 * (triage_prec * triage_rec) / (triage_prec + triage_rec) if (triage_prec + triage_rec) > 0 else 0.0
 
-        # Legacy variables for compatibility
-        tp, fp, fn = match_tp, match_fp, match_fn
-        precision, recall, f1 = match_prec, match_rec, match_f1
+        # Bootstrap F1
+        n_resamples = 1000
+        boot_f1s = []
+        import random
+        for _ in range(n_resamples):
+            sample = [random.choice(case_records) for _ in range(len(case_records))]
+            tp = fp = fn = 0
+            for c in sample:
+                if c["p_dec"] == DecisionLabel.MATCHED.value:
+                    if c["g_dec"] == DecisionLabel.MATCHED.value and c["is_correct_case"]:
+                        tp += 1
+                    else:
+                        fp += 1
+                elif c["g_dec"] == DecisionLabel.MATCHED.value:
+                    fn += 1
+            p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f = 2 * (p * r) / (p + r) if (p + r) > 0 else 0.0
+            boot_f1s.append(f)
+            
+        boot_f1s.sort()
+        f1_low = boot_f1s[int(n_resamples * 0.025)] if boot_f1s else 0.0
+        f1_high = boot_f1s[int(n_resamples * 0.975)] if boot_f1s else 0.0
 
-        fmr = match_fp / n_total if n_total > 0 else 0.0
+        fmr = match_fp / (match_tp + match_fp) if (match_tp + match_fp) > 0 else 0.0
         automation_rate = (n_total - uncertain_count) / n_total if n_total > 0 else 0.0
         reason_acc = correct_reason_count / total_evaluable_reasons if total_evaluable_reasons > 0 else 0.0
-        utility = self.compute_cost_weighted_utility(tp, fp, fn, uncertain_count, unexplained_exceptions)
+        
+        amount_weighted_acc = correct_amount / total_amount if total_amount > 0 else 0.0
+        
+        pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["gemini-3.7-flash"])
+        total_cost = (ai_tokens_input * pricing["input"]) + (ai_tokens_output * pricing["output"])
 
         scenario_breakdown = {}
         for tmpl, stats in scenario_stats.items():
@@ -197,51 +241,41 @@ class FinancialReconciliationMetrics:
             "triage_recall": float(triage_rec),
             "triage_f1_score": float(triage_f1),
             "false_match_rate": float(fmr),
+            "false_match_amount": float(false_match_amount),
+            "amount_weighted_accuracy": float(amount_weighted_acc),
             "automation_rate": float(automation_rate),
             "cause_diagnosis_accuracy": float(reason_acc),
-            "cost_weighted_utility": float(utility),
             "scenario_breakdown": scenario_breakdown,
+            "confusion_matrix": confusion_matrix,
+            "ai_metrics": {
+                "escalations": ai_escalations,
+                "resolutions": ai_resolutions,
+                "resolution_rate": ai_resolutions / ai_escalations if ai_escalations > 0 else 0.0,
+                "input_tokens": ai_tokens_input,
+                "output_tokens": ai_tokens_output,
+                "total_cost": total_cost,
+                "cost_per_case": total_cost / n_total if n_total > 0 else 0.0,
+                "cost_per_resolution": total_cost / ai_resolutions if ai_resolutions > 0 else 0.0,
+                "cost_per_1000": (total_cost / n_total * 1000) if n_total > 0 else 0.0
+            },
             "latencies_ms": latencies_ms,
+            "p50_latency": float(np.percentile(latencies_ms, 50)) if latencies_ms else 0.0,
+            "p90_latency": float(np.percentile(latencies_ms, 90)) if latencies_ms else 0.0,
+            "p95_latency": float(np.percentile(latencies_ms, 95)) if latencies_ms else 0.0,
+            "p99_latency": float(np.percentile(latencies_ms, 99)) if latencies_ms else 0.0,
             "llm_investigated": llm_investigated,
             "deterministic_fast_path": deterministic_fast_path,
-            "_match_confidences": match_confidences,
-            "_match_labels": match_labels,
+            "f1_ci95": [float(f1_low), float(f1_high)],
         }
 
-        return {
-            "total_cases": n_total,
-            "true_positives": tp,
-            "false_positives": fp,
-            "false_negatives": fn,
-            "uncertain_cases": uncertain_count,
-            "precision": float(precision),
-            "recall": float(recall),
-            "f1_score": float(f1),
-            "false_match_rate": float(fmr),
-            "automation_rate": float(automation_rate),
-            "cause_diagnosis_accuracy": float(reason_acc),
-            "cost_weighted_utility": float(utility),
-            "scenario_breakdown": scenario_breakdown,
-            "latencies_ms": latencies_ms,
-            "llm_investigated": llm_investigated,
-            "deterministic_fast_path": deterministic_fast_path,
-            # For AURC computation
-            "_match_confidences": match_confidences,
-            "_match_labels": match_labels,
-        }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Bootstrap Confidence Intervals
-# ─────────────────────────────────────────────────────────────────────────────
 
 def bootstrap_confidence_interval(
     values: List[float],
-    n_resamples: int = 1000,
+    n_resamples: int = 10000,
     alpha: float = 0.05
 ) -> Tuple[float, float, float]:
     """
-    Returns (mean, lower_95ci, upper_95ci) using percentile bootstrap.
+    Returns (mean, lower_95ci, upper_95ci) using percentile bootstrap over case-level scores.
     """
     if len(values) == 0:
         return 0.0, 0.0, 0.0
@@ -257,66 +291,3 @@ def bootstrap_confidence_interval(
     low = float(np.percentile(boot_means, 100 * (alpha / 2.0)))
     high = float(np.percentile(boot_means, 100 * (1.0 - alpha / 2.0)))
     return mean_val, low, high
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Scenario-Level Aggregation
-# ─────────────────────────────────────────────────────────────────────────────
-
-def aggregate_scenario_breakdown(
-    seed_results: List[Dict[str, Any]]
-) -> Dict[str, Dict[str, float]]:
-    """
-    Aggregates per-scenario precision/recall across multiple seeds.
-    Returns mean precision and recall per scenario template.
-    """
-    from collections import defaultdict
-    template_prec: Dict[str, List[float]] = defaultdict(list)
-    template_rec: Dict[str, List[float]] = defaultdict(list)
-
-    for seed_result in seed_results:
-        for tmpl, stats in seed_result.get("scenario_breakdown", {}).items():
-            template_prec[tmpl].append(stats["precision"])
-            template_rec[tmpl].append(stats["recall"])
-
-    aggregated = {}
-    for tmpl in template_prec:
-        p_mean, p_lo, p_hi = bootstrap_confidence_interval(template_prec[tmpl])
-        r_mean, r_lo, r_hi = bootstrap_confidence_interval(template_rec[tmpl])
-        aggregated[tmpl] = {
-            "mean_precision": round(p_mean, 4),
-            "prec_ci95": [round(p_lo, 4), round(p_hi, 4)],
-            "mean_recall": round(r_mean, 4),
-            "rec_ci95": [round(r_lo, 4), round(r_hi, 4)],
-        }
-
-    return aggregated
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Auditor Reproducibility Checker
-# ─────────────────────────────────────────────────────────────────────────────
-
-def check_citation_validity(case_results: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Checks that claimed evidence IDs and match arithmetic are internally consistent.
-    Returns audit compliance percentage.
-    """
-    total = len(case_results)
-    valid_citation_cases = 0
-
-    for case in case_results:
-        cited = case.get("cited_evidence_ids", [])
-        available_facts = [f.get("fact_id", "") for f in case.get("evidence_facts", [])]
-        available_set = set(available_facts)
-
-        if not cited or all(c in available_set for c in cited):
-            valid_citation_cases += 1
-
-    citation_compliance = valid_citation_cases / total if total > 0 else 1.0
-    return {
-        "total_cases": total,
-        "citation_compliant_cases": valid_citation_cases,
-        "citation_compliance_rate": round(citation_compliance, 4),
-        "audit_pass": citation_compliance >= 0.99,
-    }
