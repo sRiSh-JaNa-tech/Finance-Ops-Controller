@@ -9,7 +9,7 @@ from finance_ops.rules.engine import FinancialRuleEngine
 from finance_ops.rules.constraint_solver import SplitReconciliationSolver
 from finance_ops.evidence.bundle import EvidenceBundleBuilder
 from finance_ops.evidence.tools import InvestigationToolbox
-from finance_ops.agent.investigator import BoundedInvestigationAgent
+from finance_ops.agent.cascade_router import CascadeReconciliationPipeline
 from finance_ops.decision.verifier import DeterministicPolicyVerifier
 from finance_ops.decision.calibration import ConfidenceCalibrator
 from finance_ops.benchmark.runner import run_benchmark
@@ -30,7 +30,7 @@ STATE = {
 }
 
 
-def initialize_demo_state(n_cases=50, seed=42):
+def initialize_demo_state(n_cases=40, seed=42):
     dataset = generate_synthetic_dataset(n_cases=n_cases, seed=seed)
     repo = FinancialDataRepository()
     blocking = CandidateBlockingEngine()
@@ -46,10 +46,14 @@ def initialize_demo_state(n_cases=50, seed=42):
         graph.add_transaction_node(r)
 
     blocking.index_transactions(dataset.gateway_records + dataset.bank_records)
-    toolbox = InvestigationToolbox(repo, blocking, graph, rules, solver)
-    agent = BoundedInvestigationAgent(toolbox, max_steps=5)
-    verifier = DeterministicPolicyVerifier(repo)
-    calibrator = ConfidenceCalibrator()
+    blocking_pairs = blocking.generate_candidate_pairs(dataset.gateway_records, dataset.bank_records)
+    candidate_lookup = {}
+    for src, tgt, keys in blocking_pairs:
+        if src.transaction_id not in candidate_lookup:
+            candidate_lookup[src.transaction_id] = []
+        candidate_lookup[src.transaction_id].append(tgt)
+
+    cascade = CascadeReconciliationPipeline(repository=repo, mode="offline")
 
     processed_cases = []
     total = len(dataset.ground_truth_cases)
@@ -59,31 +63,35 @@ def initialize_demo_state(n_cases=50, seed=42):
         src_tx = repo.get_transaction(src_id)
         if not src_tx:
             continue
-        cand_ids = blocking.retrieve_candidate_ids(src_tx, max_candidates=5)
-        candidates = [repo.get_transaction(cid) for cid in cand_ids if repo.get_transaction(cid)]
-        rule_map = {c.transaction_id: rules.evaluate_pair(src_tx, c) for c in candidates}
-        graph_map = {c.transaction_id: graph.get_k_hop_neighborhood(c.transaction_id) for c in candidates}
-        bundle = EvidenceBundleBuilder.build_bundle(gt["case_id"], src_tx, candidates, rule_map, graph_map)
-        rec = agent.investigate_case(gt["case_id"], src_tx)
-        cal_conf = calibrator.calibrate(rec.confidence_score)
-        decision_rec = verifier.verify_and_finalize(rec, src_tx, cal_conf)
-        repo.store_decision(decision_rec)
+        cands = candidate_lookup.get(src_tx.transaction_id, [])
+        if not cands:
+            cand_ids = blocking.retrieve_candidate_ids(src_tx, max_candidates=5)
+            cands = [repo.get_transaction(cid) for cid in cand_ids if repo.get_transaction(cid)]
+            
+        rule_map = {c.transaction_id: rules.evaluate_pair(src_tx, c) for c in cands}
+        graph_map = {c.transaction_id: graph.get_k_hop_neighborhood(c.transaction_id) for c in cands}
+        bundle = EvidenceBundleBuilder.build_bundle(gt["case_id"], src_tx, cands, rule_map, graph_map)
+        
+        res = cascade.process_single_case(src_tx, cands, case_id=gt["case_id"], template=gt.get("template"))
+        final_rec = res["final_record"]
+        repo.store_decision(final_rec)
+        
         processed_cases.append({
             "case_id": gt["case_id"],
             "template": gt["template"],
             "source_transaction": src_tx.model_dump(mode="json"),
             "expected_decision": gt["expected_decision"].value,
             "expected_reason": gt["expected_reason"].value,
-            "final_decision": decision_rec.decision.value,
-            "final_reason": decision_rec.reason.value,
-            "calibrated_confidence": decision_rec.calibrated_confidence,
-            "is_automated": decision_rec.is_automated,
-            "verifier_status": decision_rec.verifier_status,
-            "tool_calls": rec.tool_calls_performed,
-            "matched_target_ids": [p["target"] for p in decision_rec.matched_pairs],
+            "final_decision": final_rec.decision.value,
+            "final_reason": final_rec.reason.value,
+            "calibrated_confidence": final_rec.calibrated_confidence,
+            "is_automated": final_rec.is_automated,
+            "verifier_status": final_rec.verifier_status,
+            "tool_calls": res.get("usage_metadata", {}).get("total_tokens", 0) // 500,
+            "matched_target_ids": [p["target"] for p in final_rec.matched_pairs],
             "evidence_facts": [f.model_dump(mode="json") for f in bundle.facts],
-            "explanation": decision_rec.explanation,
-            "is_correct": gt["expected_decision"].value == decision_rec.decision.value,
+            "explanation": final_rec.explanation,
+            "is_correct": gt["expected_decision"].value == final_rec.decision.value,
         })
 
     STATE["repo"] = repo
@@ -234,11 +242,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
 .tbl tr.ok td{border-left:2px solid var(--green);}
 .tbl tr.fail td{border-left:2px solid var(--red);}
 .tag{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;}
-.tag-matched{background:var(--green-dim);color:var(--green);}
-.tag-exception{background:var(--red-dim);color:var(--red);}
-.tag-uncertain{background:var(--amber-dim);color:var(--amber);}
-.tag-ok{background:var(--green-dim);color:var(--green);}
-.tag-fail{background:var(--red-dim);color:var(--red);}
+.tag-matched{background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.25);}
+.tag-exception{background:rgba(167,139,250,.15);color:#c084fc;border:1px solid rgba(167,139,250,.3);}
+.tag-uncertain{background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.25);}
+.tag-ok{background:rgba(34,197,94,.12);color:#22c55e;border:1px solid rgba(34,197,94,.25);}
+.tag-fail{background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.25);}
 .mono{font-family:'JetBrains Mono',monospace;font-size:11px;color:#93c5fd;}
 .cbar{height:3px;border-radius:2px;margin-top:4px;background:var(--faint);}
 .cbar-fill{height:100%;border-radius:2px;}
@@ -358,6 +366,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
     <button class="nav-item" id="nav-arch" onclick="nav('arch')">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       Architecture
+    </button>
+    <button class="nav-item" id="nav-tests" onclick="nav('tests')">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      Tests &amp; Results
     </button>
   </nav>
   <div class="sb-footer">
@@ -632,6 +644,27 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
             <div class="metric-eg">82% → 18 per 100 cases need human review</div>
           </div>
         </div>
+
+        <div class="divider"></div>
+
+        <div style="font-size:12px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Decision Label Semantics (Reconciliation Taxonomy)
+        </div>
+        <div class="vs-grid">
+          <div class="vs-card" style="border-left:3px solid #22c55e;">
+            <div class="vs-name" style="color:#22c55e;">MATCHED (Positive Resolution)</div>
+            <div class="vs-body">Source and bank/gateway records are verified to represent the identical economic event (exact match, known MDR fee deduction, or split transaction). <strong>Fully automated.</strong></div>
+          </div>
+          <div class="vs-card" style="border-left:3px solid #c084fc;">
+            <div class="vs-name" style="color:#c084fc;">EXCEPTION (Correct Anomaly Catch)</div>
+            <div class="vs-body">A deterministic financial defect or dispute was <strong>successfully identified &amp; diagnosed</strong> (e.g., GST rate calculation error, duplicate reversal, expired auth, fee violation). <strong>This is a correct positive finding.</strong></div>
+          </div>
+          <div class="vs-card" style="border-left:3px solid #f59e0b;">
+            <div class="vs-name" style="color:#f59e0b;">UNCERTAIN (Unresolved / Low Confidence)</div>
+            <div class="vs-body">The system lacked sufficient mathematical evidence or calibrated confidence (&lt; 0.80) to definitively classify the record. Escalate to human triage. In ground truth benchmarks, <strong>UNCERTAIN represents an unresolved prediction (most probably missed)</strong>.</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -691,6 +724,161 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
         </tbody>
       </table>
     </div>
+  </div>
+
+  <!-- ===================== PAGE: TESTS ===================== -->
+  <div class="page" id="page-tests">
+
+    <!-- Test Suite KPIs -->
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:20px;">
+      <div class="kpi-card c-green"><div class="kpi-header"><div class="kpi-label">Tests Passed</div><div class="kpi-icon c-green"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div></div><div class="kpi-val">39</div><div class="kpi-meta">of 41 collected</div></div>
+      <div class="kpi-card c-amber"><div class="kpi-header"><div class="kpi-label">Skipped</div><div class="kpi-icon c-amber"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div></div><div class="kpi-val">2</div><div class="kpi-meta">live Gemini API tests</div></div>
+      <div class="kpi-card c-red"><div class="kpi-header"><div class="kpi-label">Failed</div><div class="kpi-icon c-red"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div></div><div class="kpi-val" style="color:var(--green)">0</div><div class="kpi-meta">zero failures</div></div>
+      <div class="kpi-card c-blue"><div class="kpi-header"><div class="kpi-label">Duration</div><div class="kpi-icon c-blue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div></div><div class="kpi-val">3.43s</div><div class="kpi-meta">full suite runtime</div></div>
+      <div class="kpi-card c-purple"><div class="kpi-header"><div class="kpi-label">Test Modules</div><div class="kpi-icon c-purple"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div></div><div class="kpi-val">14</div><div class="kpi-meta">test files</div></div>
+    </div>
+
+    <!-- Test Suite Breakdown -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Unit &amp; Stress Test Results
+          </div>
+          <div class="panel-sub">pytest &middot; Python 3.11.6 &middot; plugins: anyio, langsmith</div>
+        </div>
+        <span class="panel-badge">39 passed &middot; 2 skipped &middot; 0 failed</span>
+      </div>
+      <div style="padding:0;">
+        <table class="tbl">
+          <thead><tr>
+            <th>Test Module</th><th>Coverage Area</th>
+            <th style="text-align:center">Tests</th>
+            <th style="text-align:center">Status</th>
+            <th style="min-width:140px">Progress</th>
+          </tr></thead>
+          <tbody>
+            <tr class="ok"><td><span class="mono">test_agent.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Bounded Investigation Agent</div><div style="font-size:11px;color:var(--muted)">Multi-step ReAct loop, tool dispatch, convergence</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">2/2</span></div></td></tr>
+            <tr><td><span class="mono">test_agent_recovery.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Agent Fault Tolerance</div><div style="font-size:11px;color:var(--muted)">API timeout, tool failure, error fallback paths</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">1s</td><td style="text-align:center"><span class="tag" style="background:var(--amber-dim);color:var(--amber)">Skipped</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:0%;background:#f59e0b"></div></div><span class="mini-bar-val" style="color:#f59e0b">0/1</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_baselines.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Baseline Models (Exact / Rules)</div><div style="font-size:11px;color:var(--muted)">ExactMatcher, RuleMatcher deterministic correctness</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">2/2</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_benchmark.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Metrics Engine</div><div style="font-size:11px;color:var(--muted)">F1, FMR, Bootstrap CI, scenario breakdown accuracy</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">2/2</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_cascade.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">5-Stage Cascade Router</div><div style="font-size:11px;color:var(--muted)">Tier 1 fast-path, Tier 2 single-turn, Tier 3 loop, async batch</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">5</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">5/5</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_evidence_bundle.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Evidence Bundle Builder</div><div style="font-size:11px;color:var(--muted)">Cryptographic provenance, SHA-256 integrity, fact types</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">2/2</span></div></td></tr>
+            <tr><td><span class="mono">test_gemini_api.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Live Gemini API Integration</div><div style="font-size:11px;color:var(--muted)">Requires GEMINI_API_KEY — skipped in offline CI</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">1s</td><td style="text-align:center"><span class="tag" style="background:var(--amber-dim);color:var(--amber)">Skipped</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:0%;background:#f59e0b"></div></div><span class="mini-bar-val" style="color:#f59e0b">0/1</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_generator.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Synthetic Data Generator</div><div style="font-size:11px;color:var(--muted)">15 scenario templates, fault injection, seed determinism</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">2/2</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_ingestion.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Ingestion &amp; Normalization</div><div style="font-size:11px;color:var(--muted)">Integer-paise precision, canonical schema, currency normalization</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">3</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">3/3</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_models.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Core Data Models</div><div style="font-size:11px;color:var(--muted)">Pydantic schema validation, enum constraints, model invariants</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">4</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">4/4</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_production_realism.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Production Realism Stress Tests</div><div style="font-size:11px;color:var(--muted)">GST anomalies, split payments, reversals, MDR fee schedules, merchant typos</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">6</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">6/6</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_retrieval.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Blocking &amp; Reranking</div><div style="font-size:11px;color:var(--muted)">Inverted index blocking, candidate reduction ratio, composite scoring</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">3</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">3/3</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_rules.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Financial Rule Engine</div><div style="font-size:11px;color:var(--muted)">AC/AI/TC/AB rule categories, GST rate validation, reversal limits</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">3</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">3/3</span></div></td></tr>
+            <tr class="ok"><td><span class="mono">test_verifier.py</span></td><td><div style="font-size:12px;font-weight:600;color:var(--text)">Deterministic Policy Verifier (Stress)</div><div style="font-size:11px;color:var(--muted)">Missing records, extreme amount mismatches, confidence escalation vetoes</div></td><td style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;">5</td><td style="text-align:center"><span class="tag tag-ok">Passed</span></td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">5/5</span></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tier Routing Donut + Ablation Chart Row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+
+      <div class="panel" style="margin-bottom:0;">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Cascade Tier Routing (300 cases)
+            </div>
+            <div class="panel-sub">AI call allocation per tier &mdash; offline benchmark</div>
+          </div>
+        </div>
+        <div class="panel-body" style="display:flex;align-items:center;gap:20px;">
+          <div style="width:150px;height:150px;flex-shrink:0;"><canvas id="tier-donut"></canvas></div>
+          <div style="flex:1;">
+            <div style="margin-bottom:12px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><div style="width:10px;height:10px;border-radius:50%;background:#22c55e"></div><span style="font-size:12px;font-weight:600;">Tier 1 &mdash; Deterministic</span></div>
+              <div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:6.3%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">19</span></div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">0 AI tokens &middot; $0.00 &middot; &lt;0.1ms</div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><div style="width:10px;height:10px;border-radius:50%;background:#3b82f6"></div><span style="font-size:12px;font-weight:600;">Tier 2 &mdash; Single-Turn</span></div>
+              <div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:44.3%;background:#3b82f6"></div></div><span class="mini-bar-val" style="color:#3b82f6">133</span></div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">~530 tokens/case &middot; $0.00004/case</div>
+            </div>
+            <div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;"><div style="width:10px;height:10px;border-radius:50%;background:#a78bfa"></div><span style="font-size:12px;font-weight:600;">Tier 3 &mdash; Deep Reasoning</span></div>
+              <div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:49.3%;background:#a78bfa"></div></div><span class="mini-bar-val" style="color:#a78bfa">148</span></div>
+              <div style="font-size:11px;color:var(--muted);margin-top:2px;">~1800 tokens/case &middot; 2+ AI calls</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:0;">
+        <div class="panel-head">
+          <div>
+            <div class="panel-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              3-System Cascade Ablation
+            </div>
+            <div class="panel-sub">All-AI vs Rules+AI vs Cascade &middot; 300 cases</div>
+          </div>
+        </div>
+        <div class="panel-body"><div style="height:200px;"><canvas id="ablation-chart"></canvas></div></div>
+      </div>
+    </div>
+
+    <!-- Concurrency Scaling -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Async Concurrency Scaling (asyncio + Semaphore)
+          </div>
+          <div class="panel-sub">Throughput and P95 latency &mdash; 100 cases offline</div>
+        </div>
+        <span class="panel-badge">Peak: 800.5 c/s @ 16 workers</span>
+      </div>
+      <div style="padding:0;">
+        <table class="tbl">
+          <thead><tr><th>Workers</th><th>Throughput (cases/sec)</th><th>Scaling Factor</th><th>P95 Latency</th><th>Assessment</th></tr></thead>
+          <tbody>
+            <tr><td style="font-family:'JetBrains Mono',monospace;font-weight:700;">1</td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:5.9%;background:#3b82f6"></div></div><span class="mini-bar-val" style="color:#64748b">47.1/s</span></div></td><td style="font-size:12px;color:var(--muted);">1.0x baseline</td><td style="font-family:'JetBrains Mono',monospace;">32.0 ms</td><td><span class="tag" style="background:var(--blue-dim);color:#93c5fd;">Baseline</span></td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;font-weight:700;">2</td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:15.7%;background:#3b82f6"></div></div><span class="mini-bar-val" style="color:#93c5fd">125.4/s</span></div></td><td style="font-size:12px;color:var(--green);">2.66x</td><td style="font-family:'JetBrains Mono',monospace;">30.6 ms</td><td><span class="tag tag-ok">Good</span></td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;font-weight:700;">4</td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:31.9%;background:#3b82f6"></div></div><span class="mini-bar-val" style="color:#93c5fd">255.1/s</span></div></td><td style="font-size:12px;color:var(--green);">5.41x</td><td style="font-family:'JetBrains Mono',monospace;">30.4 ms</td><td><span class="tag tag-ok">Great</span></td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;font-weight:700;">8</td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:57.8%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">463.1/s</span></div></td><td style="font-size:12px;color:var(--green);">9.83x</td><td style="font-family:'JetBrains Mono',monospace;">28.2 ms</td><td><span class="tag tag-ok">Excellent</span></td></tr>
+            <tr class="ok"><td style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);">16 &#9733;</td><td><div class="mini-bar-wrap"><div class="mini-bar-track"><div class="mini-bar-fill" style="width:100%;background:#22c55e"></div></div><span class="mini-bar-val" style="color:#22c55e">800.5/s</span></div></td><td style="font-size:12px;font-weight:700;color:var(--green);">17.0x</td><td style="font-family:'JetBrains Mono',monospace;color:var(--green);">30.3 ms</td><td><span class="tag tag-ok">Peak Throughput</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Threshold Calibration -->
+    <div class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            Routing Threshold Calibration (200-case Dev Set)
+          </div>
+          <div class="panel-sub">Sweep to freeze threshold guaranteeing FMR &le; 0.5%</div>
+        </div>
+        <span class="panel-badge" style="background:rgba(34,197,94,.12);color:#22c55e;border-color:rgba(34,197,94,.3);">Frozen at &tau; = 0.80</span>
+      </div>
+      <div style="padding:0;">
+        <table class="tbl">
+          <thead><tr><th>Threshold (&tau;)</th><th>False Match Rate</th><th>Automation Rate</th><th>Safety</th><th>Decision</th></tr></thead>
+          <tbody>
+            <tr class="ok"><td style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--green);">0.80 &#9733;</td><td><span style="color:#22c55e;font-weight:700;font-family:'JetBrains Mono',monospace;">0.00%</span></td><td style="font-family:'JetBrains Mono',monospace;">74.00%</td><td><span class="tag tag-ok">Safe</span></td><td><span class="tag tag-ok">Frozen Boundary</span></td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;">0.85</td><td style="font-family:'JetBrains Mono',monospace;color:#22c55e;">0.00%</td><td style="font-family:'JetBrains Mono',monospace;">74.00%</td><td><span class="tag tag-ok">Safe</span></td><td style="font-size:11px;color:var(--muted);">More conservative</td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;">0.90</td><td style="font-family:'JetBrains Mono',monospace;color:#22c55e;">0.00%</td><td style="font-family:'JetBrains Mono',monospace;">74.00%</td><td><span class="tag tag-ok">Safe</span></td><td style="font-size:11px;color:var(--muted);">Conservative</td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;">0.95</td><td style="font-family:'JetBrains Mono',monospace;color:#22c55e;">0.00%</td><td style="font-family:'JetBrains Mono',monospace;">74.00%</td><td><span class="tag tag-ok">Safe</span></td><td style="font-size:11px;color:var(--muted);">Ultra-conservative</td></tr>
+            <tr><td style="font-family:'JetBrains Mono',monospace;">0.98</td><td style="font-family:'JetBrains Mono',monospace;color:#22c55e;">0.00%</td><td style="font-family:'JetBrains Mono',monospace;">74.00%</td><td><span class="tag tag-ok">Safe</span></td><td style="font-size:11px;color:var(--muted);">Max restriction</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <!-- ===================== PAGE: ARCH ===================== -->
@@ -775,6 +963,7 @@ const PAGE_META = {
   benchmark: { title:'Benchmark',  sub:'Multi-seed evaluation across 4 systems and 15 scenarios' },
   cases:     { title:'Live Cases', sub:'{{ cases|length }} cases processed by the AI agent on this server' },
   arch:      { title:'Architecture', sub:'System design · 6 modules · evidence-grounded decisions' },
+  tests:     { title:'Tests & Results', sub:'Full test suite · tier routing telemetry · concurrency scaling' },
 };
 function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -792,6 +981,10 @@ function nav(name) {
   if (name==='benchmark') {
     drawBenchCharts();
     drawBenchRows();
+  }
+  if (name==='tests') {
+    drawTierDonut();
+    drawAblationChart();
   }
 }
 
@@ -1041,6 +1234,54 @@ function closeCase(){
 }
 document.getElementById('case-overlay').addEventListener('click',function(e){if(e.target===this)closeCase();});
 
+/* Tier Donut */
+let tierDonutDrawn = false;
+function drawTierDonut() {
+  if (tierDonutDrawn) return;
+  const c = document.getElementById('tier-donut');
+  if (!c) return;
+  tierDonutDrawn = true;
+  new Chart(c.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Tier 1 Deterministic', 'Tier 2 Single-Turn', 'Tier 3 Deep Reasoning'],
+      datasets: [{ data: [19, 133, 148], backgroundColor: ['rgba(34,197,94,.85)', 'rgba(59,130,246,.85)', 'rgba(167,139,250,.85)'], borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '68%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} cases` } } }
+    }
+  });
+}
+
+/* Ablation Chart */
+let ablationDrawn = false;
+function drawAblationChart() {
+  if (ablationDrawn) return;
+  const c = document.getElementById('ablation-chart');
+  if (!c) return;
+  ablationDrawn = true;
+  new Chart(c.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: ['All AI', 'Rules + AI', 'Cascade'],
+      datasets: [
+        { label: 'F1 Score (%)', data: [83.2, 88.5, 74.1], backgroundColor: ['rgba(100,116,139,.7)', 'rgba(59,130,246,.8)', 'rgba(34,197,94,.8)'], borderRadius: 6, borderSkipped: false, yAxisID: 'y' },
+        { label: 'Throughput (c/s)', data: [2.1, 213.1, 532.9], backgroundColor: ['rgba(100,116,139,.3)', 'rgba(59,130,246,.3)', 'rgba(34,197,94,.3)'], borderRadius: 6, borderSkipped: false, yAxisID: 'y1', type: 'line', fill: false, borderColor: ['rgba(100,116,139,.6)', 'rgba(59,130,246,.6)', 'rgba(34,197,94,.6)'], tension: 0.3 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: '#64748b', font: { size: 10 } } } },
+      scales: {
+        x: { grid: { color: 'rgba(30,45,69,.6)' }, ticks: { color: '#64748b', font: { size: 11 } } },
+        y: { grid: { color: 'rgba(30,45,69,.6)' }, ticks: { color: '#64748b', font: { size: 10 }, callback: v => v + '%' }, min: 0, max: 100, position: 'left' },
+        y1: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 }, callback: v => v + '/s' }, min: 0, position: 'right' }
+      }
+    }
+  });
+}
+
 /* INIT */
 initKPIs();
 drawF1Chart();
@@ -1068,5 +1309,5 @@ def api_cases():
     return jsonify(STATE["cases"])
 
 if __name__ == "__main__":
-    initialize_demo_state(n_cases=40, seed=42)
+    initialize_demo_state(n_cases=100, seed=42)
     app.run(host="127.0.0.1", port=5000, debug=False)

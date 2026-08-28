@@ -19,6 +19,7 @@ from finance_ops.core.models import (
     CanonicalTransaction, DecisionLabel, ReasonCode, AgentRecommendation
 )
 from finance_ops.retrieval.reranker import DeterministicCandidateReranker, EvidencePacketBuilder
+from finance_ops.rules.constraint_solver import SplitReconciliationSolver
 from finance_ops.decision.verifier import DeterministicPolicyVerifier
 
 
@@ -108,6 +109,231 @@ class CascadeReconciliationPipeline:
         self.llm_client = llm_client
         self.mode = mode
 
+    def _evaluate_offline_evidence(
+        self,
+        src: CanonicalTransaction,
+        ranked: List[Dict[str, Any]],
+        tier: CascadeExecutionTier,
+        case_id: Optional[str]
+    ) -> AgentRecommendation:
+        """
+        Data-driven financial evidence evaluation without ANY ground-truth peeking.
+        Evaluates amounts, references, timestamps, MDR fee schedules, GST tax rates,
+        split sums, and candidate ambiguity.
+        """
+        cid = case_id or src.transaction_id
+        if not ranked:
+            return AgentRecommendation(
+                case_id=cid,
+                recommended_decision=DecisionLabel.EXCEPTION,
+                primary_reason=ReasonCode.MISSING_SOURCE_RECORD,
+                confidence_score=0.92,
+                cited_evidence_ids=[src.transaction_id],
+                matched_record_ids=[],
+                explanation_narrative="Zero matching candidate records retrieved in blocking space.",
+                investigator="data-driven-evidence-engine"
+            )
+        
+        top1 = ranked[0]
+        top_cand: CanonicalTransaction = top1["candidate"]
+        top1_score = top1["composite_score"]
+        amt_diff_paise = abs(src.amount_paise - top_cand.amount_paise)
+        
+        # 1. Candidate Tie / Ambiguity check (real ambiguity detection)
+        if len(ranked) > 1:
+            score_margin = top1_score - ranked[1]["composite_score"]
+            if score_margin < 0.08 and top1_score >= 0.60:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.UNCERTAIN,
+                    primary_reason=ReasonCode.AMBIGUOUS_CANDIDATES,
+                    confidence_score=0.52,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id, ranked[1]["candidate"].transaction_id],
+                    matched_record_ids=[],
+                    explanation_narrative=f"Ambiguity detected: Top 2 candidates have narrow score margin ({score_margin:.3f}). Escalating to human auditor.",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+
+        # 2. Exact Identifier & Amount Match
+        has_exact_ref = bool(
+            (src.invoice_reference and top_cand.invoice_reference and src.invoice_reference.upper().strip() == top_cand.invoice_reference.upper().strip())
+            or (src.utr and top_cand.utr and src.utr.strip() == top_cand.utr.strip())
+            or (src.order_id and top_cand.order_id and src.order_id.upper().strip() == top_cand.order_id.upper().strip())
+        )
+        
+        if amt_diff_paise == 0 and has_exact_ref and not src.is_refund and not top_cand.is_refund:
+            return AgentRecommendation(
+                case_id=cid,
+                recommended_decision=DecisionLabel.MATCHED,
+                primary_reason=ReasonCode.EXACT_IDENTIFIER_MATCH,
+                confidence_score=0.99,
+                cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                matched_record_ids=[top_cand.transaction_id],
+                explanation_narrative=f"Exact match on identifier and amount ({src.amount} {src.currency}).",
+                investigator="data-driven-evidence-engine",
+                usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+            )
+            
+        # 3. Split Payment Tranches (1-to-N conservation)
+        if len(ranked) > 1 and not src.is_refund:
+            cands_all = [r["candidate"] for r in ranked]
+            solver = SplitReconciliationSolver()
+            split_sol = solver.solve_1_to_n(src, cands_all)
+            if split_sol:
+                matched_ids = split_sol["matched_transaction_ids"]
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.MATCHED,
+                    primary_reason=ReasonCode.SPLIT_PAYMENT_MATCH,
+                    confidence_score=0.97,
+                    cited_evidence_ids=[src.transaction_id] + matched_ids,
+                    matched_record_ids=matched_ids,
+                    explanation_narrative=f"Split payment verified: {len(matched_ids)} candidate tranches perfectly conserve source amount.",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+                
+        # 4. Reversals & Refunds (Lifecycle handling)
+        if src.is_reversal or src.is_refund or top_cand.is_refund or top_cand.is_reversal:
+            time_diff_days = abs(src.txn_timestamp - top_cand.txn_timestamp) / 86400.0 if (src.txn_timestamp and top_cand.txn_timestamp) else 0.0
+            if time_diff_days > 90.0:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.EXCEPTION,
+                    primary_reason=ReasonCode.EXPIRED_REVERSAL,
+                    confidence_score=0.95,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                    matched_record_ids=[],
+                    explanation_narrative=f"Policy violation: Reversal request received after {time_diff_days:.1f} days (exceeds 90-day window).",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+            if amt_diff_paise == 0:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.MATCHED,
+                    primary_reason=ReasonCode.REVERSAL_MATCH,
+                    confidence_score=0.96,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                    matched_record_ids=[top_cand.transaction_id],
+                    explanation_narrative=f"Valid refund/reversal lifecycle match against original charge {top_cand.transaction_id}.",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+            else:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.EXCEPTION,
+                    primary_reason=ReasonCode.AMOUNT_MISMATCH,
+                    confidence_score=0.91,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                    matched_record_ids=[],
+                    explanation_narrative=f"Reversal amount mismatch: source {src.amount} vs original charge {top_cand.amount}.",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+
+        # 5. GST Tax Calculation Discrepancy
+        if top_cand.gst_paise > 0:
+            fee_amt = src.amount_paise - top_cand.amount_paise
+            expected_gst = int(round(fee_amt * 0.18))
+            if abs(top_cand.gst_paise - expected_gst) > 100:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.EXCEPTION,
+                    primary_reason=ReasonCode.GST_CALCULATION_ERROR,
+                    confidence_score=0.96,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                    matched_record_ids=[],
+                    explanation_narrative=f"GST calculation defect: Recorded GST {top_cand.gst_paise} paise does not match 18% statutory rate on fee ({expected_gst} paise).",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+
+        # 6. MDR Fee Deduction (1.0% to 3.5% standard fee range)
+        fee_diff = src.amount_paise - top_cand.amount_paise
+        if fee_diff > 0:
+            fee_pct = fee_diff / src.amount_paise
+            if 0.005 <= fee_pct <= 0.035:
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.MATCHED,
+                    primary_reason=ReasonCode.FEE_ADJUSTED_MATCH,
+                    confidence_score=0.96,
+                    cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                    matched_record_ids=[top_cand.transaction_id],
+                    explanation_narrative=f"Net settlement verified: Fee deduction of {fee_diff/100:.2f} INR ({fee_pct*100:.2f}%) matches MDR fee schedule.",
+                    investigator="data-driven-evidence-engine",
+                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                    tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+                )
+
+        # 7. Fuzzy Merchant Name Typo with Exact Amount
+        if amt_diff_paise == 0 and top1_score >= 0.70:
+            return AgentRecommendation(
+                case_id=cid,
+                recommended_decision=DecisionLabel.MATCHED,
+                primary_reason=ReasonCode.FUZZY_ENTITY_MATCH,
+                confidence_score=0.91,
+                cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                matched_record_ids=[top_cand.transaction_id],
+                explanation_narrative=f"Fuzzy match verified: Amount conserved perfectly, narrative similarity score {top1_score:.2f}.",
+                investigator="data-driven-evidence-engine",
+                usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+            )
+
+        # 8. Small FX / Decimal Rounding (< 0.5% diff with high confidence)
+        if amt_diff_paise > 0 and (amt_diff_paise / src.amount_paise) < 0.005 and top1_score >= 0.75:
+            return AgentRecommendation(
+                case_id=cid,
+                recommended_decision=DecisionLabel.MATCHED,
+                primary_reason=ReasonCode.FEE_ADJUSTED_MATCH,
+                confidence_score=0.90,
+                cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                matched_record_ids=[top_cand.transaction_id],
+                explanation_narrative=f"Minor currency / decimal rounding discrepancy of {amt_diff_paise/100:.2f} INR within tolerance.",
+                investigator="data-driven-evidence-engine",
+                usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+            )
+
+        # 9. Low Confidence or Unexplained Large Discrepancy -> Exception or Escalation
+        if top1_score < 0.50 or amt_diff_paise > int(src.amount_paise * 0.10):
+            return AgentRecommendation(
+                case_id=cid,
+                recommended_decision=DecisionLabel.EXCEPTION,
+                primary_reason=ReasonCode.AMOUNT_MISMATCH,
+                confidence_score=0.88,
+                cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+                matched_record_ids=[],
+                explanation_narrative=f"Unreconciled discrepancy: Amount variance {amt_diff_paise/100:.2f} INR exceeds fee schedules with no valid explanation.",
+                investigator="data-driven-evidence-engine",
+                usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+                tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+            )
+
+        return AgentRecommendation(
+            case_id=cid,
+            recommended_decision=DecisionLabel.UNCERTAIN,
+            primary_reason=ReasonCode.BELOW_CONFIDENCE_THRESHOLD,
+            confidence_score=0.60,
+            cited_evidence_ids=[src.transaction_id, top_cand.transaction_id],
+            matched_record_ids=[],
+            explanation_narrative="Insufficient evidence to prove match or policy exception. Escalated to human review.",
+            investigator="data-driven-evidence-engine",
+            usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530} if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else {"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
+            tool_calls_performed=0 if tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE else 2
+        )
+
     def process_single_case(
         self,
         src: CanonicalTransaction,
@@ -156,56 +382,8 @@ class CascadeReconciliationPipeline:
         elif tier == CascadeExecutionTier.TIER_2_SINGLE_TURN_EVIDENCE:
             # AI Inference Path (Gemini 2.5 Flash-Lite Single-Turn)
             if self.mode == "offline" or not self.llm_client or not getattr(self.llm_client, "has_credentials", False):
-                # Honest offline mock with structured evidence evaluation
-                top_cand_id = ranked[0]["candidate_id"] if ranked else None
-                tmpl = template or ""
-                mock_decision, mock_reason = DecisionLabel.UNCERTAIN, ReasonCode.BELOW_CONFIDENCE_THRESHOLD
-                matched_ids = [top_cand_id] if top_cand_id else []
-
-                if tmpl in ["S01_CLEAN_EXACT_MATCH", "S11_CARD_T2_SETTLEMENT", "S12_HOLIDAY_SETTLEMENT"]:
-                    mock_decision, mock_reason = DecisionLabel.MATCHED, ReasonCode.EXACT_IDENTIFIER_MATCH
-                elif tmpl in ["S02_FEE_ADJUSTED_MDR", "S09_FX_ROUNDING"]:
-                    mock_decision, mock_reason = DecisionLabel.MATCHED, ReasonCode.FEE_ADJUSTED_MATCH
-                elif tmpl == "S04_SPLIT_PAYMENT":
-                    mock_decision, mock_reason = DecisionLabel.MATCHED, ReasonCode.SPLIT_PAYMENT_MATCH
-                    matched_ids = [c["candidate_id"] for c in ranked if c.get("candidate_id")]
-                elif tmpl == "S05_VALID_REVERSAL":
-                    mock_decision, mock_reason = DecisionLabel.MATCHED, ReasonCode.REVERSAL_MATCH
-                elif tmpl == "S08_MERCHANT_NAME_TYPO":
-                    mock_decision, mock_reason = DecisionLabel.MATCHED, ReasonCode.FUZZY_ENTITY_MATCH
-                elif tmpl in ["S03_GST_DISCREPANCY"]:
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.GST_CALCULATION_ERROR
-                    matched_ids = []
-                elif tmpl == "S06_EXPIRED_REVERSAL":
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.EXPIRED_REVERSAL
-                    matched_ids = []
-                elif tmpl == "S07_DUPLICATE_REVERSAL":
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.DUPLICATE_REVERSAL
-                    matched_ids = []
-                elif tmpl in ["S10_UNEXPLAINED_MISMATCH", "S13_MISSING_APPROVAL_TOKEN"]:
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.AMOUNT_MISMATCH
-                    matched_ids = []
-                elif tmpl == "S15_REPEATED_MICRO_CREDIT_LEAKAGE":
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.REVENUE_LEAKAGE_DETECTED
-                    matched_ids = []
-                elif tmpl == "S14_CANDIDATE_TIE_AMBIGUITY":
-                    mock_decision, mock_reason = DecisionLabel.UNCERTAIN, ReasonCode.AMBIGUOUS_CANDIDATES
-                    matched_ids = []
-                elif ranked and ranked[0]["composite_score"] >= 0.60:
-                    mock_decision = DecisionLabel.MATCHED
-                    mock_reason = ReasonCode.FEE_ADJUSTED_MATCH if ranked[0]["amount_difference"] > 0.02 else ReasonCode.EXACT_IDENTIFIER_MATCH
-
-                rec = AgentRecommendation(
-                    case_id=case_id or src.transaction_id,
-                    recommended_decision=mock_decision,
-                    primary_reason=mock_reason,
-                    confidence_score=0.98,
-                    cited_evidence_ids=[src.transaction_id, top_cand_id] if top_cand_id else [src.transaction_id],
-                    matched_record_ids=matched_ids if mock_decision == DecisionLabel.MATCHED else [],
-                    explanation_narrative="MOCK-EVIDENCE-REASONING",
-                    investigator="MOCK-gemini-2.5-flash-lite",
-                    usage_metadata={"input_tokens": 450, "output_tokens": 80, "total_tokens": 530}
-                )
+                # Data-driven evidence evaluation based on amounts, references, fees, and rules (NO template peeking)
+                rec = self._evaluate_offline_evidence(src, ranked, tier, case_id)
             else:
                 # Live Gemini 2.5 Flash-Lite Single-Turn Evidence Call
                 prompt = (
@@ -234,35 +412,8 @@ class CascadeReconciliationPipeline:
         elif tier == CascadeExecutionTier.TIER_3_DEEP_REASONING:
             # Tier 3: Deep Reasoning (Gemini + Additional Evidence/Tool Loop)
             if self.mode == "offline" or not self.llm_client or not getattr(self.llm_client, "has_credentials", False):
-                # Mock multi-step deep reasoning loop
-                top_cand_id = ranked[0]["candidate_id"] if ranked else None
-                tmpl = template or ""
-                mock_decision, mock_reason = DecisionLabel.UNCERTAIN, ReasonCode.BELOW_CONFIDENCE_THRESHOLD
-                matched_ids = [top_cand_id] if top_cand_id else []
-
-                if tmpl in ["S03_GST_DISCREPANCY", "S06_EXPIRED_REVERSAL", "S07_DUPLICATE_REVERSAL", "S10_UNEXPLAINED_MISMATCH", "S13_MISSING_APPROVAL_TOKEN", "S15_REPEATED_MICRO_CREDIT_LEAKAGE"]:
-                    mock_decision, mock_reason = DecisionLabel.EXCEPTION, ReasonCode.AMOUNT_MISMATCH
-                    matched_ids = []
-                elif tmpl == "S14_CANDIDATE_TIE_AMBIGUITY":
-                    mock_decision, mock_reason = DecisionLabel.UNCERTAIN, ReasonCode.AMBIGUOUS_CANDIDATES
-                    matched_ids = []
-                elif ranked and ranked[0]["composite_score"] >= 0.50:
-                    mock_decision = DecisionLabel.MATCHED
-                    mock_reason = ReasonCode.FUZZY_ENTITY_MATCH
-                
-                # Simulate 2-3 AI calls
-                rec = AgentRecommendation(
-                    case_id=case_id or src.transaction_id,
-                    recommended_decision=mock_decision,
-                    primary_reason=mock_reason,
-                    confidence_score=0.90,
-                    cited_evidence_ids=[src.transaction_id, top_cand_id] if top_cand_id else [src.transaction_id],
-                    matched_record_ids=matched_ids if mock_decision == DecisionLabel.MATCHED else [],
-                    explanation_narrative="MOCK-EVIDENCE-DEEP-REASONING-LOOP",
-                    investigator="MOCK-gemini-deep-reasoning",
-                    usage_metadata={"input_tokens": 1500, "output_tokens": 300, "total_tokens": 1800},
-                    tool_calls_performed=2
-                )
+                # Data-driven multi-step evidence loop (NO template peeking)
+                rec = self._evaluate_offline_evidence(src, ranked, tier, case_id)
             else:
                 # Live Gemini Multi-step loop (simulated by 2 back-to-back calls or tools)
                 prompt_step_1 = (

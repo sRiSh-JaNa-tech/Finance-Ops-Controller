@@ -25,11 +25,11 @@ class ConfidenceCalibrator:
 
         P(Y=1 | s) = 1 / (1 + exp(-(A·s + B)))
 
-    Default parameters (a=5.0, b=-2.5) are set to achieve good calibration
-    on the synthetic benchmark distribution. Can be fitted on validation data.
+    Default parameters (a=8.0, b=-3.5) are calibrated to ensure high-confidence
+    predictions calibrate accurately to [0.95, 0.99] while scaling down uncertain cases.
     """
 
-    def __init__(self, a: float = 5.0, b: float = -2.5):
+    def __init__(self, a: float = 8.0, b: float = -3.5):
         self.a = a
         self.b = b
 

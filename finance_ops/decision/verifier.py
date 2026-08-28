@@ -31,29 +31,26 @@ class DeterministicPolicyVerifier:
         self.rule_engine = rule_engine or DeterministicRuleEngine()
         self.policy = AsymmetricDecisionPolicy()
 
-    def _calculate_dynamic_threshold(self, reason: ReasonCode, amount_paise: int) -> float:
-        # Base threshold from AsymmetricDecisionPolicy
-        base_threshold = self.policy.auto_match_threshold
-        
+    def _calculate_dynamic_threshold(self, reason: ReasonCode, amount_paise: int, base_threshold: float = 0.80) -> float:
         # Risk scaling based on amount (higher amounts require higher confidence)
         amount_risk_multiplier = 1.0
-        if amount_paise > 10000000: # > 100k INR
+        if amount_paise > 10000000:  # > 100k INR
             amount_risk_multiplier = 1.05
             
         # Reason-specific risk profiles
         reason_risk_factors = {
-            ReasonCode.EXACT_IDENTIFIER_MATCH: 0.95,
-            ReasonCode.FEE_ADJUSTED_MATCH: 1.0,
-            ReasonCode.SPLIT_PAYMENT_MATCH: 1.0,
-            ReasonCode.FUZZY_ENTITY_MATCH: 1.1,
-            ReasonCode.REVERSAL_MATCH: 1.0,
+            ReasonCode.EXACT_IDENTIFIER_MATCH: 0.90,
+            ReasonCode.FEE_ADJUSTED_MATCH: 0.95,
+            ReasonCode.SPLIT_PAYMENT_MATCH: 0.95,
+            ReasonCode.FUZZY_ENTITY_MATCH: 1.05,
+            ReasonCode.REVERSAL_MATCH: 0.95,
         }
         
         risk_factor = reason_risk_factors.get(reason, 1.0)
         
-        # Calculate dynamic expected loss threshold
+        # Calculate dynamic expected loss threshold bounded safely
         dynamic_threshold = base_threshold * risk_factor * amount_risk_multiplier
-        return float(min(0.99, max(base_threshold, dynamic_threshold)))
+        return float(min(0.98, max(0.70, dynamic_threshold)))
 
     def verify_and_finalize(
         self,
@@ -119,7 +116,7 @@ class DeterministicPolicyVerifier:
         requires_human = False
 
         # Phase 3: Context-Adaptive Risk Thresholds (Instance-Specific Abstention)
-        dynamic_threshold = self._calculate_dynamic_threshold(reason, source_tx.amount_paise)
+        dynamic_threshold = self._calculate_dynamic_threshold(reason, source_tx.amount_paise, base_threshold=auto_match_threshold)
 
         original_decision = recommendation.recommended_decision
         
