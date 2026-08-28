@@ -23,7 +23,7 @@ class CryptographicAuditSeal(BaseModel):
     target_tx_hashes: List[str] = Field(default_factory=list)
     rules_evaluation_hash: str
     evidence_merkle_root: str
-    signature_algorithm: str = "SHA-256-MERKLE"
+    signature_algorithm: str = "SHA-256 Evidence Root"
     is_tamper_evident: bool = True
 
 

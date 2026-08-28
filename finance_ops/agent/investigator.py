@@ -122,6 +122,62 @@ class BoundedInvestigationAgent:
                     human_review_required=False,
                     investigator="deterministic-fast-path"
                 )
+                
+            # Fast-Path 2: Fee-Adjusted Match (MDR)
+            fee_diff = source_tx.amount_paise - cand.amount_paise
+            if (
+                fee_diff > 0 
+                and (fee_diff / source_tx.amount_paise) <= 0.035
+                and not source_tx.is_refund
+                and (
+                    (source_tx.invoice_reference and cand.invoice_reference and source_tx.invoice_reference.upper().strip() == cand.invoice_reference.upper().strip())
+                )
+            ):
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.MATCHED,
+                    primary_reason=ReasonCode.FEE_ADJUSTED_MATCH,
+                    cited_evidence_ids=[source_tx.transaction_id, cand.transaction_id],
+                    matched_record_ids=[source_tx.transaction_id, cand.transaction_id],
+                    confidence_score=0.98,
+                    fuzzy_score=0.95,
+                    leakage_risk=0.0,
+                    rules_passed=["AC-2", "AI-1", "TC-1"],
+                    explanation_narrative="Fast-Path Fee Match: Net settlement adjusted for valid MDR fee.",
+                    tool_calls_performed=0,
+                    tool_call_sequence=[],
+                    investigation_hypotheses_tested=["FEE_ADJUSTMENT"],
+                    human_review_required=False,
+                    investigator="deterministic-fast-path"
+                )
+                
+        # Fast-Path 3: Split Sum Match
+        if len(candidates) > 1:
+            total_cand_amount = sum(c.amount_paise for c in candidates)
+            if (
+                source_tx.amount_paise == total_cand_amount
+                and not source_tx.is_refund
+                and all(not c.is_refund for c in candidates)
+                and all(source_tx.invoice_reference and c.invoice_reference and source_tx.invoice_reference.upper().strip() == c.invoice_reference.upper().strip() for c in candidates)
+            ):
+                cand_ids = [c.transaction_id for c in candidates]
+                return AgentRecommendation(
+                    case_id=cid,
+                    recommended_decision=DecisionLabel.MATCHED,
+                    primary_reason=ReasonCode.SPLIT_PAYMENT_MATCH,
+                    cited_evidence_ids=[source_tx.transaction_id] + cand_ids,
+                    matched_record_ids=[source_tx.transaction_id] + cand_ids,
+                    confidence_score=0.98,
+                    fuzzy_score=1.0,
+                    leakage_risk=0.0,
+                    rules_passed=["AC-4", "AI-1"],
+                    explanation_narrative="Fast-Path Split Match: Candidate tranches perfectly sum to source amount.",
+                    tool_calls_performed=0,
+                    tool_call_sequence=[],
+                    investigation_hypotheses_tested=["SPLIT_SUM"],
+                    human_review_required=False,
+                    investigator="deterministic-fast-path"
+                )
 
         # Dispatch to Gemini Vertex AI Client / Cognitive State Machine
         recommendation = self.vertex_client.investigate_case(

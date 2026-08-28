@@ -6,6 +6,7 @@ and exports benchmark metrics to benchmark_results.json.
 
 import json
 import logging
+from finance_ops.ledger.journal import LedgerRepository
 from finance_ops.benchmark.runner import run_benchmark
 
 logging.basicConfig(
@@ -22,13 +23,15 @@ def print_banner(title: str) -> None:
 
 
 def run_full_benchmark():
-    print_banner("AI FINANCE CONTROLLER — PROTOTYPE 3 FULL RESEARCH BENCHMARK")
-    print("[*] Track 04: Run the books and the cash position")
+    print_banner("AI FINANCE CONTROLLER: PROTOTYPE 4 (ReAct) BENCHMARK RUNNER")
     print("[*] Architecture: Evidence-Grounded Autonomous Investigation Agent")
     print("[*] Gemini Vertex AI Native Function Calling + Deterministic Fallback Engine\n")
 
     cases_per_batch = 100
     print(f"[METRIC: Throughput] Processing single batch of {cases_per_batch} complex synthetic transactions...")
+    
+    # Initialize ledger repository
+    ledger_repo = LedgerRepository()
     
     results = run_benchmark(
         seeds=[42],
@@ -37,11 +40,15 @@ def run_full_benchmark():
     )
 
     # We use Prototype3 for the main reporting
-    p3_stats = results["systems"]["Prototype3_GeminiVertexAgent"]
+    p3_stats = results["systems"]["Prototype4_GeminiReAct"]
     rule_stats = results["systems"]["RuleMatcher"]
 
     # Calculate raw counts from the first seed
     exceptions = results.get("honest_exception_list", [])
+    
+    # Process journal entries from results
+    for entry in results.get("journal_entries", []):
+        ledger_repo.post(entry)
     
     # We must calculate TP, FP, FN, UNCERTAIN
     # Since metrics.py doesn't return raw counts in the summary, we can approximate or if metrics engine was modified:
@@ -87,6 +94,12 @@ def run_full_benchmark():
     else:
         print(f"  LLM recall delta: {improvement:.1f}% vs baseline (precision-oriented risk abstention)")
 
+    print(f"\nLedger:")
+    tb = ledger_repo.trial_balance()
+    print(f"  Debit = Credit: INR {tb['total_debits_paise']/100:,.2f} = INR {tb['total_credits_paise']/100:,.2f}")
+    print(f"  Unbalanced entries: {tb['difference_paise']}")
+    print("")
+
     print(f"\nEXCEPTIONS:")
     shown = 0
     for e in exceptions[:15]:
@@ -102,6 +115,8 @@ def run_full_benchmark():
     # Section 4: Export JSON
     output_path = "benchmark_results.json"
     with open(output_path, "w", encoding="utf-8") as f:
+        if 'journal_entries' in results:
+            del results['journal_entries']
         json.dump(results, f, indent=2)
     print(f"\n[+] Full benchmark metrics successfully saved to {output_path}")
 

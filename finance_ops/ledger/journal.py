@@ -221,3 +221,54 @@ class GeneralLedgerPostingEngine:
             decision_id=decision.decision_id,
             lines=lines
         )
+
+
+class LedgerRepository:
+    """
+    Persistent Double-Entry General Ledger.
+    Maintains accounts and enforces balance across the entire system.
+    """
+    
+    def __init__(self):
+        self.entries: List[DoubleEntryJournalEntry] = []
+        self.accounts: Dict[str, int] = {
+            ChartOfAccounts.CASH_AT_BANK: 0,
+            ChartOfAccounts.ACCOUNTS_RECEIVABLE_CLEARING: 0,
+            ChartOfAccounts.GST_INPUT_TAX_RECEIVABLE: 0,
+            ChartOfAccounts.PAYMENT_GATEWAY_CLEARING: 0,
+            ChartOfAccounts.ACCOUNTS_PAYABLE_UNMATCHED: 0,
+            ChartOfAccounts.DISPUTED_SETTLEMENT_SUSPENSE: 0,
+            ChartOfAccounts.MERCHANT_PROCESSING_FEE_EXPENSE: 0,
+            ChartOfAccounts.REVENUE_LEAKAGE_LOSS: 0
+        }
+        
+    def post(self, entry: DoubleEntryJournalEntry):
+        """Posts a balanced journal entry to the ledger."""
+        if not entry.is_balanced:
+            raise ValueError(f"Cannot post unbalanced entry: {entry.entry_id}")
+            
+        self.entries.append(entry)
+        for line in entry.lines:
+            # According to accounting principles, Debits increase Assets/Expenses
+            # Credits increase Liabilities/Equity/Revenue. 
+            # We'll maintain a signed balance where Debits are positive and Credits are negative.
+            self.accounts[line.account_code] = self.accounts.get(line.account_code, 0) + line.debit_paise - line.credit_paise
+
+    def get_account_balance(self, account_code: str) -> int:
+        return self.accounts.get(account_code, 0)
+        
+    def trial_balance(self) -> Dict[str, Any]:
+        """Computes the Trial Balance report."""
+        total_debits = 0
+        total_credits = 0
+        
+        for entry in self.entries:
+            total_debits += entry.total_debit_paise
+            total_credits += entry.total_credit_paise
+            
+        return {
+            "total_debits_paise": total_debits,
+            "total_credits_paise": total_credits,
+            "difference_paise": total_debits - total_credits,
+            "entry_count": len(self.entries)
+        }

@@ -12,21 +12,27 @@ class InvestigationState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
     case_id: str
     error: Optional[str]
+    steps: int
 
-def create_agent_graph(llm: ChatGoogleGenerativeAI, tools: list):
+def create_agent_graph(llm: ChatGoogleGenerativeAI, tools: list, max_steps: int = 5):
     # Bind tools to the LLM
     llm_with_tools = llm.bind_tools(tools)
     
     def agent_node(state: InvestigationState):
         try:
             response = llm_with_tools.invoke(state["messages"])
-            return {"messages": [response]}
+            return {"messages": [response], "steps": state.get("steps", 0) + 1}
         except Exception as e:
             return {"error": str(e)}
             
     def should_continue(state: InvestigationState):
         if state.get("error"):
             return END
+            
+        # Enforce budget
+        if state.get("steps", 0) >= max_steps:
+            return END
+            
         messages = state["messages"]
         last_message = messages[-1]
         

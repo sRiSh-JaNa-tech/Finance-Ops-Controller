@@ -783,7 +783,7 @@ function nav(name) {
 /* KPI cards */
 function initKPIs() {
   if (!BD) return;
-  const m = BD['Prototype3_GeminiVertexAgent'];
+  const m = BD['Prototype4_GeminiReAct'];
   if (!m) return;
   document.getElementById('kpi-f1').textContent = (m.f1_score_mean*100).toFixed(1)+'%';
   document.getElementById('kpi-f1-ci').textContent = `CI [${(m.f1_score_ci95[0]*100).toFixed(1)}–${(m.f1_score_ci95[1]*100).toFixed(1)}]`;
@@ -807,9 +807,9 @@ function initKPIs() {
 function drawF1Chart() {
   if (!BD) return;
   const labels = [], vals = [], colors = [];
-  const COLORS = {'ExactMatcher':'rgba(100,116,139,.7)','RuleMatcher':'rgba(100,116,139,.7)','Prototype1_Hybrid':'rgba(100,116,139,.7)','Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'};
+  const COLORS = {'ExactMatcher':'rgba(100,116,139,.7)','RuleMatcher':'rgba(100,116,139,.7)','Prototype1_Hybrid':'rgba(100,116,139,.7)','Prototype4_GeminiReAct':'rgba(59,130,246,.85)'};
   Object.entries(BD).forEach(([sys,m]) => {
-    labels.push(sys.replace('Prototype3_GeminiVertexAgent','P3 Gemini AI').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules'));
+    labels.push(sys.replace('Prototype4_GeminiReAct','P4 Gemini AI').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules'));
     vals.push((m.f1_score_mean*100).toFixed(1));
     colors.push(COLORS[sys]||'rgba(100,116,139,.7)');
   });
@@ -833,10 +833,10 @@ function drawBenchCharts() {
   if (benchChartsDrawn || !BD) return;
   benchChartsDrawn = true;
   const labels = [], f1vals = [], fmrvals = [], colors = [], fmrColors = [];
-  const COLORS = {'ExactMatcher':'rgba(100,116,139,.6)','RuleMatcher':'rgba(100,116,139,.6)','Prototype1_Hybrid':'rgba(100,116,139,.6)','Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'};
-  const FMR_C = {'ExactMatcher':'rgba(34,197,94,.8)','RuleMatcher':'rgba(239,68,68,.7)','Prototype1_Hybrid':'rgba(239,68,68,.7)','Prototype3_GeminiVertexAgent':'rgba(34,197,94,.8)'};
+  const COLORS = {'ExactMatcher':'rgba(100,116,139,.6)','RuleMatcher':'rgba(100,116,139,.6)','Prototype1_Hybrid':'rgba(100,116,139,.6)','Prototype4_GeminiReAct':'rgba(59,130,246,.85)'};
+  const FMR_C = {'ExactMatcher':'rgba(34,197,94,.8)','RuleMatcher':'rgba(239,68,68,.7)','Prototype1_Hybrid':'rgba(239,68,68,.7)','Prototype4_GeminiReAct':'rgba(34,197,94,.8)'};
   Object.entries(BD).forEach(([sys,m])=>{
-    const label = sys.replace('Prototype3_GeminiVertexAgent','P3 AI Agent').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules');
+    const label = sys.replace('Prototype4_GeminiReAct','P4 AI Agent').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules');
     labels.push(label);
     f1vals.push((m.f1_score_mean*100).toFixed(1));
     fmrvals.push((m.false_match_rate_mean*100).toFixed(1));
@@ -868,7 +868,7 @@ function drawBenchRows() {
     'ExactMatcher':'Baseline 1 — exact reference ID lookup',
     'RuleMatcher':'Baseline 2 — fuzzy amount + date rules',
     'Prototype1_Hybrid':'Prototype 1 — composite similarity scoring',
-    'Prototype3_GeminiVertexAgent':'Prototype 3 — Gemini AI + 17 financial rules',
+    'Prototype4_GeminiReAct':'Prototype 4 — Gemini AI + ReAct Agent',
   };
   Object.entries(BD).forEach(([sys,m])=>{
     const isWin = m.f1_score_mean===maxF1;
@@ -882,7 +882,7 @@ function drawBenchRows() {
     row.className = 'bench-row'+(isWin?' winner':'');
     row.innerHTML = `
       <div>
-        <div class="sys-label">${sys.replace('Prototype3_GeminiVertexAgent','P3 Gemini AI Agent').replace('Prototype1_Hybrid','P1 Hybrid')}</div>
+        <div class="sys-label">${sys.replace('Prototype4_GeminiReAct','P4 Gemini AI Agent').replace('Prototype1_Hybrid','P1 Hybrid')}</div>
         <div class="sys-desc">${SYS_DESC[sys]||''}</div>
         ${isWin?'<div class="winner-pill"><svg width="9" height="9" viewBox="0 0 24 24" fill="#fbbf24" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Best System</div>':''}
       </div>

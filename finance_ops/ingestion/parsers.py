@@ -53,7 +53,7 @@ class DeadLetterQueue:
 
 class MT940BankStatementParser:
     """
-    Parser for SWIFT MT940 electronic bank statements.
+    MT940-compatible parser for our canonical INR schema.
     Extracts Tag :61: (Statement Line) and Tag :86: (Information to Account Owner).
     """
 

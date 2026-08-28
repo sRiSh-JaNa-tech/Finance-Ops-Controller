@@ -1,10 +1,10 @@
-r"""Prototype 3 Benchmark Runner — Multi-System Evaluation Across 15 Scenarios.
+r"""Prototype 4 Benchmark Runner — Multi-System Evaluation Across 15 Scenarios.
 
 Compares:
 1. ExactIdentifierMatcher
 2. DeterministicRuleMatcher
-3. Prototype1HybridPipeline
-4. Prototype3_GeminiVertexAgent (Evidence-Grounded Autonomous Investigation Agent)
+3. Prototype1_Hybrid (Baseline + Rule/ML Ensemble)
+4. Prototype4_GeminiReAct (Evidence-Grounded Autonomous Investigation Agent)
 
 Reports:
 - PyResolveMetrics (Precision, Recall, F1, Reduction Ratio, Pairs Completeness)
@@ -31,6 +31,7 @@ from finance_ops.evidence.tools import InvestigationToolbox
 from finance_ops.agent.vertex_client import GeminiReconciliationClient
 from finance_ops.agent.investigator import BoundedInvestigationAgent
 from finance_ops.decision.verifier import DeterministicPolicyVerifier
+from finance_ops.ledger.journal import GeneralLedgerPostingEngine
 from finance_ops.decision.calibration import ConfidenceCalibrator
 from finance_ops.baselines.baseline_models import ExactIdentifierMatcher, DeterministicRuleMatcher, Prototype1HybridPipeline
 from finance_ops.benchmark.metrics import (
@@ -75,11 +76,13 @@ def run_benchmark(
         seeds = [42, 101, 202]
 
     metric_engine = FinancialReconciliationMetrics()
-    system_names = ["ExactMatcher", "RuleMatcher", "Prototype1_Hybrid", "Prototype3_GeminiVertexAgent"]
+    system_names = ["ExactMatcher", "RuleMatcher", "Prototype1_Hybrid", "Prototype4_GeminiReAct"]
 
     seed_results: Dict[str, List[Dict[str, Any]]] = {sys: [] for sys in system_names}
     blocking_stats_all: List[Dict[str, Any]] = []
     all_honest_exceptions: List[Dict[str, Any]] = []
+    journal_entries_list = []
+    ledger_engine = GeneralLedgerPostingEngine()
 
     for seed in seeds:
         reset_reconciliation_registry()
@@ -132,11 +135,29 @@ def run_benchmark(
                     res = proto1_matcher.match(src_tx, candidates)
                     lat = time.perf_counter() - start_time
                     predictions.append({"decision": res["decision"], "reason": res["reason"], "confidence": 0.85, "latency_ms": lat * 1000})
-                elif sys_name == "Prototype3_GeminiVertexAgent":
+                elif sys_name == "Prototype4_GeminiReAct":
                     start_time = time.perf_counter()
                     rec = agent.investigate(src_tx, candidates, case_id=case["case_id"])
                     final_dec = verifier.verify_and_finalize(rec, src_tx, rec.confidence_score)
                     lat = time.perf_counter() - start_time
+                    
+                    matched_txs = [c for c in candidates if any(m["target"] == c.transaction_id for m in final_dec.matched_pairs)]
+                    journal_entry = ledger_engine.create_journal_entry(final_dec, src_tx, matched_txs)
+                    journal_entries_list.append(journal_entry)
+                    
+                    if final_dec.decision in (DecisionLabel.UNCERTAIN, DecisionLabel.EXCEPTION) or final_dec.verifier_status != "VERIFIED_VALID":
+                        honest_exceptions_seed.append({
+                            "case_id": case["case_id"],
+                            "template": case.get("template", "UNKNOWN"),
+                            "decision": final_dec.decision.value,
+                            "reason": final_dec.reason.value,
+                            "calibrated_confidence": round(final_dec.calibrated_confidence, 4),
+                            "verifier_status": final_dec.verifier_status,
+                            "verifier_notes": final_dec.verifier_notes,
+                            "explanation": final_dec.explanation,
+                            "source_amount_inr": float(src_tx.amount),
+                            "candidate_count": len(candidates),
+                        })
                     
                     predictions.append({
                         "decision": final_dec.decision,
@@ -171,7 +192,7 @@ def run_benchmark(
                         flush=True
                     )
 
-            if sys_name != "Prototype3_GeminiVertexAgent":
+            if sys_name != "Prototype4_GeminiReAct":
                 total_lat_ms = sum(p["latency_ms"] for p in predictions)
                 print(f"  [+] Completed {total_cases} cases in {total_lat_ms/1000:.3f}s", flush=True)
 
@@ -234,12 +255,13 @@ def run_benchmark(
         summary_dict[sys_name] = metrics_obj
 
     summary_report: Dict[str, Any] = {
-        "benchmark_version": "Prototype-3-PROD",
+        "benchmark_version": "Prototype-4-PROD",
         "total_seeds": len(seeds),
         "cases_per_seed": cases_per_seed,
         "systems": systems_dict,
         "summary": summary_dict,
         "honest_exception_list": all_honest_exceptions,
+        "journal_entries": journal_entries_list,
         "blocking_performance": {
             "avg_reduction_ratio_pct": round(float(np.mean([b["reduction_ratio_pct"] for b in blocking_stats_all])), 2),
             "avg_pairs_completeness_pct": round(float(np.mean([b["pairs_completeness_pct"] for b in blocking_stats_all])), 2),

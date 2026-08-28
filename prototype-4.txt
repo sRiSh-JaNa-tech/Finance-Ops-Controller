@@ -38,7 +38,7 @@ B. Asymmetric Cost-Weighted Decision Boundaries
      - c_E  = $50   (Cost of an unexplained exception)
 
    The optimal upper threshold for full automation (τ_auto) is derived as:
-     τ_auto = 1 - (c_U / c_FP) = 1 - (10 / 500) = 0.980 (98.0%)
+     τ_auto = (c_FP + c_U) / (c_FP + B) = (500 + 10) / (500 + 25) = 0.971 (97.1%)
 
    Decision Policy:
      - If P(Match | Evidence) >= τ_dynamic  ==> MATCHED (Automated Ledger Reconciliation)

@@ -4,7 +4,7 @@ Confidence Calibration, Asymmetric Decision Policy, ECE/Brier, and Risk-Coverage
 Mathematical formulations:
   Platt Sigmoid:    P(match|z) = 1 / (1 + exp(-(A·z + B)))
   ECE:              sum_m (|B_m|/N) · |acc(B_m) - conf(B_m)|
-  Asymmetric τ:     τ_auto = 1 - c_U / c_FP
+  Asymmetric τ:     τ_auto = (c_FP + c_U) / (c_FP + B)
   Risk-Coverage:    risk(θ) = FP(θ) / Predict(θ),  coverage(θ) = Predict(θ) / N
   AURC:             ∫₀¹ risk(c) dc  (approximated via trapezoid rule)
 """
@@ -144,7 +144,7 @@ class AsymmetricDecisionPolicy:
     """
     Implements the asymmetric cost-weighted decision rule:
 
-        Accept MATCHED if:  P̂(correct) ≥ τ_auto = 1 - c_U / c_FP
+        Accept MATCHED if:  P̂(correct) ≥ τ_auto = (c_FP + c_U) / (c_FP + B)
         Route to UNCERTAIN if: P̂(correct) < τ_auto
         Force EXCEPTION if:  P̂(correct) < τ_exception
 
@@ -174,15 +174,15 @@ class AsymmetricDecisionPolicy:
     def auto_match_threshold(self) -> float:
         """
         Asymmetric automation threshold:
-            τ_auto = 1 - c_U / c_FP
+            τ_auto = (c_FP + c_U) / (c_FP + B)
 
         Only automate a MATCHED decision when calibrated confidence exceeds this threshold.
         Derivation: Accept automation only if E[Benefit] > E[Cost]:
             B · P ≥ c_FP · (1 - P) + c_U
             P ≥ (c_FP + c_U) / (c_FP + B)
         """
-        # Simplified form: τ = 1 - c_U/c_FP gives ≈ 0.98 with defaults
-        return min(1 - self.c_u / self.c_fp, 0.99)
+        threshold = (self.c_fp + self.c_u) / (self.c_fp + self.b)
+        return min(threshold, 0.99)
 
     @property
     def exception_threshold(self) -> float:

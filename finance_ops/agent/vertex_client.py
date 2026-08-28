@@ -288,7 +288,8 @@ class GeminiReconciliationClient:
         source_tx: CanonicalTransaction,
         candidates: List[CanonicalTransaction],
         toolbox: InvestigationToolbox,
-        rule_res: Dict[str, Any]
+        rule_res: Dict[str, Any],
+        max_steps: int = 5
     ) -> Optional[AgentRecommendation]:
         if not self.has_credentials:
             return None
@@ -323,7 +324,7 @@ class GeminiReconciliationClient:
         try:
             llm = ChatGoogleGenerativeAI(model=self.model_name, temperature=0.0)
             tools = create_agent_tools(toolbox)
-            graph = create_agent_graph(llm, tools)
+            graph = create_agent_graph(llm, tools, max_steps=max_steps)
             
             system_prompt = SYSTEM_PROMPT + "\\n\\nIMPORTANT: You have access to tools. If you need to test a hypothesis (e.g. FEE_MDR), YOU MUST call test_reconciliation_hypothesis. Do not guess. You can call tools multiple times. Once you are ready to conclude, output the final JSON block starting with ```json."
             
@@ -332,7 +333,7 @@ class GeminiReconciliationClient:
                 HumanMessage(content=f"Investigate this case. Call tools to gather evidence. Return final JSON when done.\\n{json.dumps(prompt_payload)}")
             ]
             
-            final_state = graph.invoke({"messages": messages, "case_id": case_id, "error": None})
+            final_state = graph.invoke({"messages": messages, "case_id": case_id, "error": None, "steps": 0})
             
             if final_state.get("error"):
                 raise Exception(final_state["error"])
@@ -456,7 +457,8 @@ class GeminiReconciliationClient:
                 source_tx=source_tx,
                 candidates=candidates,
                 toolbox=toolbox,
-                rule_res=rule_res
+                rule_res=rule_res,
+                max_steps=max_steps
             )
             if gemini_rec is not None:
                 return gemini_rec

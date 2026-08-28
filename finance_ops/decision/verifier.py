@@ -13,6 +13,7 @@ from finance_ops.core.models import (
 )
 from finance_ops.ingestion.storage import FinancialDataRepository
 from finance_ops.rules.engine import DeterministicRuleEngine
+from finance_ops.decision.calibration import AsymmetricDecisionPolicy
 
 
 class DeterministicPolicyVerifier:
@@ -28,6 +29,31 @@ class DeterministicPolicyVerifier:
     ):
         self.repo = repository
         self.rule_engine = rule_engine or DeterministicRuleEngine()
+        self.policy = AsymmetricDecisionPolicy()
+
+    def _calculate_dynamic_threshold(self, reason: ReasonCode, amount_paise: int) -> float:
+        # Base threshold from AsymmetricDecisionPolicy
+        base_threshold = self.policy.auto_match_threshold
+        
+        # Risk scaling based on amount (higher amounts require higher confidence)
+        amount_risk_multiplier = 1.0
+        if amount_paise > 10000000: # > 100k INR
+            amount_risk_multiplier = 1.05
+            
+        # Reason-specific risk profiles
+        reason_risk_factors = {
+            ReasonCode.EXACT_IDENTIFIER_MATCH: 0.95,
+            ReasonCode.FEE_ADJUSTED_MATCH: 1.0,
+            ReasonCode.SPLIT_PAYMENT_MATCH: 1.0,
+            ReasonCode.FUZZY_ENTITY_MATCH: 1.1,
+            ReasonCode.REVERSAL_MATCH: 1.0,
+        }
+        
+        risk_factor = reason_risk_factors.get(reason, 1.0)
+        
+        # Calculate dynamic expected loss threshold
+        dynamic_threshold = base_threshold * risk_factor * amount_risk_multiplier
+        return float(min(0.99, max(base_threshold, dynamic_threshold)))
 
     def verify_and_finalize(
         self,
@@ -93,14 +119,7 @@ class DeterministicPolicyVerifier:
         requires_human = False
 
         # Phase 3: Context-Adaptive Risk Thresholds (Instance-Specific Abstention)
-        if reason == ReasonCode.EXACT_IDENTIFIER_MATCH:
-            dynamic_threshold = max(0.90, auto_match_threshold)
-        elif reason in [ReasonCode.FEE_ADJUSTED_MATCH, ReasonCode.SPLIT_PAYMENT_MATCH]:
-            dynamic_threshold = max(0.95, auto_match_threshold)
-        elif reason == ReasonCode.FUZZY_ENTITY_MATCH:
-            dynamic_threshold = 0.99 # Fuzzy matches need high certainty
-        else:
-            dynamic_threshold = max(0.92, auto_match_threshold)
+        dynamic_threshold = self._calculate_dynamic_threshold(reason, source_tx.amount_paise)
 
         if decision == DecisionLabel.MATCHED:
             if calibrated_confidence >= dynamic_threshold and is_verified:
@@ -114,8 +133,14 @@ class DeterministicPolicyVerifier:
                 is_verified = False
                 verifier_notes.append(f"Escalated to Human Review: confidence {calibrated_confidence:.2f} < context threshold {dynamic_threshold:.2f}")
         elif decision == DecisionLabel.EXCEPTION:
-            is_automated = True
-            requires_human = False
+            if is_verified:
+                is_automated = True
+                requires_human = False
+            else:
+                decision = DecisionLabel.UNCERTAIN
+                is_automated = False
+                requires_human = True
+                verifier_notes.append("Veto: EXCEPTION decision without hard deterministic proof")
         else:  # UNCERTAIN
             is_automated = False
             requires_human = True

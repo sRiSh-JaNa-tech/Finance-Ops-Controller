@@ -18,8 +18,8 @@ def test_metric_engine_cost_utility():
 def test_benchmark_execution_fast():
     results = run_benchmark(seeds=[42, 101], cases_per_seed=15)
     assert "summary" in results
-    assert "Prototype3_GeminiVertexAgent" in results["summary"]
-    p3_summary = results["summary"]["Prototype3_GeminiVertexAgent"]
+    assert "Prototype4_GeminiReAct" in results["summary"]
+    p3_summary = results["summary"]["Prototype4_GeminiReAct"]
     assert "match_f1_score" in p3_summary
     assert "cost_weighted_utility" in p3_summary
     # Confirm legacy alias is GONE — Prototype2 is a separate, retired prototype
