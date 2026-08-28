@@ -132,6 +132,16 @@ class GeneralLedgerPostingEngine:
                             narration=f"Processor MDR fee deducted"
                         )
                     )
+                elif net_fee_paise < 0:
+                    lines.append(
+                        JournalEntryLine(
+                            account_code=ChartOfAccounts.MERCHANT_PROCESSING_FEE_EXPENSE,
+                            account_name="FX Gain / Fee Refund",
+                            account_type=AccountType.REVENUE,
+                            credit_paise=-net_fee_paise,
+                            narration=f"FX Gain or overpayment credited"
+                        )
+                    )
                 if gst_paise > 0:
                     lines.append(
                         JournalEntryLine(

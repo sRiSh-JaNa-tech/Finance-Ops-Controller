@@ -56,43 +56,20 @@ def run_full_benchmark():
     # Actually, the runner summary doesn't expose raw counts directly, but we have recall and precision.
     # We can just output the metrics.
     
-    # 8.5/10 Template
-    print(f"\nBATCH: {cases_per_batch} cases")
-    print("-" * 48)
+    print(f"\n====================================================================================================")
+    print(f"{'System':<25}| {'Match F1':<11}| {'Triage F1':<11}| {'False Match %':<15}| {'Cause Diag %':<15}| {'Cost Utility'}")
+    print(f"----------------------------------------------------------------------------------------------------")
+    for sys_name in ["ExactMatcher", "RuleMatcher", "Prototype1_Hybrid", "Prototype4_GeminiReAct"]:
+        stats = results["systems"][sys_name]
+        f1 = f"{stats['match_f1_score']*100:.1f}%"
+        triage_f1 = f"{stats['triage_f1_score']*100:.1f}%"
+        fmr = f"{stats['false_match_rate']*100:.1f}%"
+        cause_diag = f"{stats['cause_diagnosis_accuracy']*100:.1f}%"
+        utility = f"${stats['cost_weighted_utility']:,.2f}"
+        print(f"{sys_name:<25}| {f1:<11}| {triage_f1:<11}| {fmr:<15}| {cause_diag:<15}| {utility}")
+    print(f"====================================================================================================")
     
-    # Formatting metrics
-    match_rate = p3_stats['automation_rate_pct']
-    prec = p3_stats['match_precision'] * 100
-    rec = p3_stats['match_recall'] * 100
-    f1 = p3_stats['match_f1_score'] * 100
-    triage_f1 = p3_stats['triage_f1_score'] * 100
-    fmr = p3_stats['false_match_rate'] * 100
-
-    print(f"MATCH RATE: {match_rate:.1f}%")
-    print(f"MATCH QUALITY:  PRECISION: {prec:.1f}%, RECALL: {rec:.1f}%, F1: {f1:.1f}%, FALSE MATCH RATE: {fmr:.1f}%")
-    print(f"TRIAGE QUALITY: F1: {triage_f1:.1f}%")
-
-    if "blocking_performance" in results:
-        bp = results["blocking_performance"]
-        print(f"\nBLOCKING ENGINE (Phase 1):")
-        print(f"  Candidate Reduction Ratio: {bp.get('avg_reduction_ratio_pct', 0):.2f}%")
-        print(f"  Pairs Completeness: {bp.get('avg_pairs_completeness_pct', 0):.2f}%")
-
-    print(f"\nTHROUGHPUT:")
-    print(f"  {cases_per_batch} cases")
-    print(f"  {p3_stats.get('throughput_cases_per_sec', 0)} cases/sec")
-    print(f"  p95 latency: {p3_stats.get('p95_latency_ms', 0)} ms")
-
-    baseline_recall = rule_stats.get('match_recall', rule_stats.get('recall', 0)) * 100
-    improvement = rec - baseline_recall
-
-    print(f"\nAI CONTRIBUTION:")
-    print(f"  LLM-investigated: {p3_stats.get('llm_investigated', 0)}")
-    print(f"  deterministic fast-path: {p3_stats.get('deterministic_fast_path', 0)}")
-    if improvement >= 0:
-        print(f"  LLM recall delta: +{improvement:.1f}% vs deterministic baseline")
-    else:
-        print(f"  LLM recall delta: {improvement:.1f}% vs baseline (precision-oriented risk abstention)")
+    print(f"\n[METRIC: Throughput] Processing {cases_per_batch} cases at {p3_stats.get('throughput_cases_per_sec', 0):.2f} cases/sec (p95 latency: {p3_stats.get('p95_latency_ms', 0)} ms)")
 
     print(f"\nLedger:")
     tb = ledger_repo.trial_balance()
@@ -102,15 +79,22 @@ def run_full_benchmark():
 
     print(f"\nEXCEPTIONS:")
     shown = 0
-    for e in exceptions[:15]:
-        shown += 1
+    # Deduplicate exceptions to prevent spam
+    seen_cases = set()
+    for e in exceptions:
         cid = e.get("case_id", "UNKNOWN")
+        if cid in seen_cases:
+            continue
+        seen_cases.add(cid)
+        shown += 1
+        if shown > 5:
+            break
         reason = e.get("reason", "UNKNOWN")
         expl = e.get("explanation", "").strip()
         print(f"  {cid} -> [{reason}] \"{expl}\"")
 
-    if len(exceptions) > 15:
-        print(f"  ... and {len(exceptions) - 15} more.")
+    if len(seen_cases) > 5:
+        print(f"  ... and {len(seen_cases) - 5} more.")
 
     # Section 4: Export JSON
     output_path = "benchmark_results.json"
