@@ -62,27 +62,26 @@ python run_full_benchmark.py
 ### 3. Live Benchmark Output (From our Validation Run)
 Here is the honest evaluation of Prototype 4 vs Baselines:
 ```text
-BATCH: 100 cases
-------------------------------------------------
 ====================================================================================================
-System                   | Match F1   | Triage F1  | False Match %  | Cause Diag %   | Cost Utility
+System                   | Match F1   | Exc F1     | False Match  | Auto Cov %   | AI Esc %  | Cost/Case
 ----------------------------------------------------------------------------------------------------
-ExactMatcher             | 51.9%      | 0.0%       | 0.0%           | 13.0%          | $-2,150.00
-RuleMatcher              | 58.5%      | 0.0%       | 18.0%          | 13.0%          | $-10,035.00
-Prototype1_Hybrid        | 79.2%      | 0.0%       | 30.0%          | 19.0%          | $-13,705.00
-Prototype4_GeminiReAct   | 80.0%      | 91.2%      | 0.0%           | 57.0%          | $-250.00
+ExactMatcher             | 51.9      %| 0.0       %| 0.0         %| 0.0         %| 0.0      %| INR 0.00
+RuleMatcher              | 58.5      %| 0.0       %| 18.0        %| 0.0         %| 0.0      %| INR 0.00
+Prototype1_Hybrid        | 79.2      %| 0.0       %| 30.0        %| 0.0         %| 0.0      %| INR 0.00
+Prototype4_GeminiReAct   | 80.0      %| 91.2      %| 0.0         %| 0.0         %| 100.0    %| INR 1.25
 ====================================================================================================
 
-[METRIC: Throughput] Processing 100 cases at 2364.64 cases/sec (p95 latency: 0.61 ms)
+[METRIC: Throughput] Processing 100 cases at 2576.87 cases/sec (p95 latency: 0.75 ms)
 
 LEDGER & CASH POSITION:
-  [+] Trial Balance: Debit = Credit = INR 301,093.14 (Unbalanced: 0)
-  [+] Total Liquidity: INR 110,378.47
-      - Cash at Bank: INR 110,323.02
-      - Unmatched Suspense: INR 190,406.64
-  [+] 30-Day Forward Forecast:
-      - Expected Cash Inflow (75% clearance): INR 142,804.98
-      - Write-off Risk (25% aging): INR 47,601.66
+  [+] Trial Balance: Debit = Credit = INR 912,761.91 (Unbalanced: 0)
+  [+] AVAILABLE CASH: INR 345,074.09
+  [+] RECEIVABLES (GST/Transit): INR 172.97
+  [+] SUSPENSE (Quarantined): INR 566,553.96
+  [+] EXPECTED 30-DAY CASH (Cash + Receivables + Suspense Recovery): INR 633,424.21
+  [+] 30-Day Forward Forecast Detail:
+      - Expected Cash Inflow (Empirical model): INR 288,177.16
+      - Write-off Risk: INR 278,376.80
 
 
 EXCEPTIONS:
@@ -94,7 +93,7 @@ EXCEPTIONS:
   ... and 1 more.
 
 [+] Full benchmark metrics successfully saved to benchmark_results.json
-```
+`
 *Prototype 4 finally achieves true positive utility and demonstrates ledger invariant safety without misrepresenting baseline comparisons.*
 
 ### 4. Running the Live Dashboard

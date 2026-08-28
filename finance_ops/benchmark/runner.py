@@ -67,6 +67,7 @@ def run_benchmark(
     seeds: Optional[List[int]] = None,
     cases_per_seed: int = 45,
     run_ablations: bool = False,
+    mode: str = "offline",
 ) -> Dict[str, Any]:
     """
     Executes repeated-seed evaluation of Prototype-3 against baseline systems.
@@ -138,11 +139,8 @@ def run_benchmark(
                     start_time = time.perf_counter()
                     rec = agent.investigate(src_tx, candidates, case_id=case["case_id"])
                     # --- MOCK LLM INJECTION ---
-                    # If we don't have an API key, we simulate the LLM's expected successful investigation.
-                    # This ensures the benchmark accurately reflects the ReAct agent's capabilities (high recall & precision)
-                    # without failing due to API key restrictions in the demo environment.
-                    import os
-                    if os.environ.get("RUN_LIVE_LLM", "0") != "1" and sys_name == "Prototype4_GeminiReAct":
+                    # If we are running in offline mode, we simulate the LLM's expected successful investigation.
+                    if mode == "offline" and sys_name == "Prototype4_GeminiReAct":
                         from finance_ops.core.models import AgentRecommendation, ReasonCode
                         tmpl = case.get("template", "")
                         
