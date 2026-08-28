@@ -101,6 +101,8 @@ python run_demo.py --mode dashboard
 2. **Sub-millisecond Latency**: Non-blocking `asyncio` batch pipelines reach **800+ cases/sec** at 16 workers.
 3. **Audit Provenance**: Every decision generates an immutable cryptographic hash (`EvidenceBundle`) linking source transactions, counterparty records, and decision logs.
 
+> For complete raw logs and multi-axis performance breakdowns, see [`BENCHMARK_RESULTS.md`](BENCHMARK_RESULTS.md).
+
 ---
 
 ## 📚 Academic Foundations & Bibliography
