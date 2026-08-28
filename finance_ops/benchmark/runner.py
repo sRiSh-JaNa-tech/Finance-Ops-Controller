@@ -161,7 +161,7 @@ def run_benchmark(
                             confidence_score=0.98,
                             cited_evidence_ids=[src_tx.transaction_id, candidates[0].transaction_id] if candidates else [src_tx.transaction_id], 
                             matched_record_ids=[candidates[0].transaction_id] if candidates and mock_decision == DecisionLabel.MATCHED else [],
-                            explanation_narrative="MOCK", investigator="gemini-langgraph-agent",
+                            explanation_narrative="MOCK", investigator="MOCK-gemini-langgraph-agent",
                             usage_metadata={"input_tokens": 1500, "output_tokens": 200, "total_tokens": 1700}
                         )
 
@@ -229,5 +229,7 @@ def run_benchmark(
     print(f"AI Escalation Rate:   {ai_metrics['escalations']} cases ({ai_metrics['escalations']/len(all_ground_truth):.1%})")
     print(f"AI Resolution Rate:   {ai_metrics['resolution_rate']:.1%}")
     print(f"Cost per 1,000 cases: ${cost:.2f}")
+
+    final_results["mode"] = mode
 
     return {"systems": final_results}

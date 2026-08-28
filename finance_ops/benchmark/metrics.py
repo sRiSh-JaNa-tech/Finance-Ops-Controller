@@ -17,7 +17,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from finance_ops.core.models import DecisionLabel
 
 MODEL_PRICING = {
-    "gemini-3.7-flash": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
+    "gemini-2.5-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
     "gemini-1.5-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
     "gemini-1.5-pro": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
 }
@@ -41,7 +41,7 @@ class FinancialReconciliationMetrics:
         self,
         predictions: List[Dict[str, Any]],
         ground_truth: List[Dict[str, Any]],
-        model_name: str = "gemini-3.7-flash"
+        model_name: str = "gemini-2.5-flash-lite"
     ) -> Dict[str, Any]:
         match_tp = match_fp = match_fn = 0
         triage_tp = triage_fp = triage_fn = 0
@@ -210,7 +210,7 @@ class FinancialReconciliationMetrics:
         
         amount_weighted_acc = correct_amount / total_amount if total_amount > 0 else 0.0
         
-        pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["gemini-3.7-flash"])
+        pricing = MODEL_PRICING.get(model_name, MODEL_PRICING["gemini-2.5-flash-lite"])
         total_cost = (ai_tokens_input * pricing["input"]) + (ai_tokens_output * pricing["output"])
 
         scenario_breakdown = {}
