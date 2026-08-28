@@ -94,9 +94,11 @@ def generate_synthetic_dataset(
 
     base_time = datetime(2026, 8, 1, 10, 0, 0, tzinfo=timezone.utc)
 
-    for case_idx in range(n_cases):
+    seed_offset = (seed % 1000) * 10000
+    for case_step in range(n_cases):
+        case_idx = seed_offset + case_step
         # Round-robin selection through all 15 scenarios to ensure high coverage
-        scenario = all_scenarios[case_idx % len(all_scenarios)]
+        scenario = all_scenarios[case_step % len(all_scenarios)]
         scenario_counts[scenario.value] += 1
 
         gt_tx_id = f"GT_TX_{case_idx+1000:04d}"
