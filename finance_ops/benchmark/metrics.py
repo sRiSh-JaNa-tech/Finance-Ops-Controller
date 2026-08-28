@@ -59,6 +59,9 @@ class FinancialReconciliationMetrics:
         latencies_ms: List[float] = []
         llm_investigated = 0
         deterministic_fast_path = 0
+        tier_1_count = 0
+        tier_2_count = 0
+        tier_3_count = 0
 
         scenario_stats: Dict[str, Dict[str, int]] = {}
 
@@ -81,6 +84,7 @@ class FinancialReconciliationMetrics:
             p_reason = pred.get("reason")
             g_reason = gt.get("expected_reason")
             template = gt.get("template", "UNKNOWN")
+            tier_val = pred.get("tier", "")
             
             amount = pred.get("amount", 0.0)
             if hasattr(amount, "__float__"): amount = float(amount)
@@ -102,6 +106,13 @@ class FinancialReconciliationMetrics:
                 ai_tokens_output += out_t
             else:
                 deterministic_fast_path += 1
+                
+            if "tier-1" in tier_val:
+                tier_1_count += 1
+            elif "tier-2" in tier_val:
+                tier_2_count += 1
+            elif "tier-3" in tier_val:
+                tier_3_count += 1
 
             if template not in scenario_stats:
                 scenario_stats[template] = {"match_tp": 0, "match_fp": 0, "match_fn": 0, "uncertain": 0, "total": 0}
@@ -263,6 +274,9 @@ class FinancialReconciliationMetrics:
             "p99_latency": float(np.percentile(latencies_ms, 99)) if latencies_ms else 0.0,
             "llm_investigated": llm_investigated,
             "deterministic_fast_path": deterministic_fast_path,
+            "tier_1_count": tier_1_count,
+            "tier_2_count": tier_2_count,
+            "tier_3_count": tier_3_count,
             "f1_ci95": [float(f1_low), float(f1_high)],
         }
 

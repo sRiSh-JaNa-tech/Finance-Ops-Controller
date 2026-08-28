@@ -121,19 +121,27 @@ class DeterministicPolicyVerifier:
         # Phase 3: Context-Adaptive Risk Thresholds (Instance-Specific Abstention)
         dynamic_threshold = self._calculate_dynamic_threshold(reason, source_tx.amount_paise)
 
+        original_decision = recommendation.recommended_decision
+        
         if decision == DecisionLabel.MATCHED:
             if calibrated_confidence >= dynamic_threshold and is_verified:
                 is_automated = True
                 requires_human = False
             else:
                 decision = DecisionLabel.UNCERTAIN
-                reason = ReasonCode.BELOW_CONFIDENCE_THRESHOLD
+                if reason != ReasonCode.MISSING_SOURCE_RECORD and reason != ReasonCode.UNRESOLVED_CONTRADICTION:
+                    reason = ReasonCode.BELOW_CONFIDENCE_THRESHOLD
                 is_automated = False
                 requires_human = True
                 is_verified = False
                 verifier_notes.append(f"Escalated to Human Review: confidence {calibrated_confidence:.2f} < context threshold {dynamic_threshold:.2f}")
         elif decision == DecisionLabel.EXCEPTION:
-            if is_verified:
+            if original_decision == DecisionLabel.EXCEPTION:
+                # Agent recommended EXCEPTION, we accept it
+                is_automated = True
+                requires_human = False
+            elif original_decision == DecisionLabel.MATCHED and not is_verified:
+                # Verifier vetoed MATCHED to EXCEPTION deterministically
                 is_automated = True
                 requires_human = False
             else:

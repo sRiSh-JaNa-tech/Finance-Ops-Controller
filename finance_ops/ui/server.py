@@ -551,8 +551,8 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
         <div>System</div>
         <div>F1 Score</div>
         <div>False Match Rate</div>
-        <div>Net Utility</div>
-        <div>Cause Diag.</div>
+        <div>Throughput (cps)</div>
+        <div>Amt-Wt Acc</div>
       </div>
       <div id="bench-rows"></div>
     </div>
@@ -763,11 +763,9 @@ const CASES = {{ cases|tojson|safe }};
 
 if (BD) {
   Object.values(BD).forEach(m => {
-    if (m.f1_score_mean === undefined && m.match_f1_score !== undefined) m.f1_score_mean = m.match_f1_score;
+    if (m.f1_score === undefined && m.match_f1_score !== undefined) m.f1_score = m.match_f1_score;
     if (m.false_match_rate_mean === undefined && m.false_match_rate !== undefined) m.false_match_rate_mean = m.false_match_rate;
-    if (m.cost_weighted_utility_mean === undefined && m.cost_weighted_utility !== undefined) m.cost_weighted_utility_mean = m.cost_weighted_utility;
-    if (m.cause_diagnosis_accuracy_mean === undefined && m.cause_diagnosis_accuracy !== undefined) m.cause_diagnosis_accuracy_mean = m.cause_diagnosis_accuracy;
-    if (m.f1_score_ci95 === undefined) m.f1_score_ci95 = [m.f1_score_mean || 0, m.f1_score_mean || 0];
+    if (m.f1_ci95 === undefined) m.f1_ci95 = [m.f1_score || 0, m.f1_score || 0];
   });
 }
 
@@ -803,16 +801,16 @@ function initKPIs() {
   const protoKey = Object.keys(BD).find(k => k.includes('Prototype4') || k.includes('Prototype3') || k.includes('Gemini')) || Object.keys(BD)[0];
   const m = BD[protoKey];
   if (m) {
-    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+    const f1 = m.f1_score !== undefined ? m.f1_score : 0;
     document.getElementById('kpi-f1').textContent = (f1*100).toFixed(1)+'%';
-    const ci0 = (m.f1_score_ci95 && m.f1_score_ci95.length > 0) ? (m.f1_score_ci95[0]*100).toFixed(1) : (f1*100).toFixed(1);
-    const ci1 = (m.f1_score_ci95 && m.f1_score_ci95.length > 1) ? (m.f1_score_ci95[1]*100).toFixed(1) : (f1*100).toFixed(1);
+    const ci0 = (m.f1_ci95 && m.f1_ci95.length > 0) ? (m.f1_ci95[0]*100).toFixed(1) : (f1*100).toFixed(1);
+    const ci1 = (m.f1_ci95 && m.f1_ci95.length > 1) ? (m.f1_ci95[1]*100).toFixed(1) : (f1*100).toFixed(1);
     document.getElementById('kpi-f1-ci').textContent = 'CI [' + ci0 + ' - ' + ci1 + ']';
-    const fmrVal = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    const fmrVal = m.false_match_rate !== undefined ? m.false_match_rate : 0;
     document.getElementById('kpi-fmr').textContent = (fmrVal*100).toFixed(1)+'%';
-    document.getElementById('kpi-auto').textContent = (m.automation_rate_pct !== undefined ? m.automation_rate_pct : 82).toFixed(0)+'%';
-    const u = m.cost_weighted_utility_mean !== undefined ? m.cost_weighted_utility_mean : (m.cost_weighted_utility !== undefined ? m.cost_weighted_utility : 0);
-    document.getElementById('kpi-util').textContent = (u<0?'-':'+')+' $'+Math.abs(u).toLocaleString('en-US',{maximumFractionDigits:0});
+    document.getElementById('kpi-auto').textContent = (m.automation_rate_pct !== undefined ? m.automation_rate_pct : (m.automation_rate !== undefined ? m.automation_rate * 100 : 82)).toFixed(0)+'%';
+    const acc = m.amount_weighted_accuracy !== undefined ? m.amount_weighted_accuracy : 0;
+    document.getElementById('kpi-util').textContent = (acc*100).toFixed(1)+'%';
   }
   if (CASES && CASES.length) {
     const cor = CASES.filter(c=>c.is_correct).length;
@@ -832,15 +830,14 @@ function drawF1Chart() {
   if (!canvas) return;
   const labels = [], vals = [], colors = [];
   const COLORS = {
-    'ExactMatcher':'rgba(100,116,139,.7)',
-    'RuleMatcher':'rgba(100,116,139,.7)',
-    'Prototype1_Hybrid':'rgba(100,116,139,.7)',
-    'Prototype4_GeminiReAct':'rgba(59,130,246,.85)',
-    'Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'
+    'Exact':'rgba(100,116,139,.7)',
+    'Rules':'rgba(100,116,139,.7)',
+    'Rules + Gemini':'rgba(59,130,246,.85)',
+    'Rules + Gemini + Verifier':'rgba(34,197,94,.85)',
   };
   Object.entries(BD).forEach(([sys,m]) => {
-    labels.push(sys.replace('Prototype4_GeminiReAct','P4 Gemini AI').replace('Prototype3_GeminiVertexAgent','P4 Gemini AI').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules'));
-    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+    labels.push(sys);
+    const f1 = m.f1_score !== undefined ? m.f1_score : 0;
     vals.push((f1*100).toFixed(1));
     colors.push(COLORS[sys]||'rgba(59,130,246,.85)');
   });
@@ -868,24 +865,22 @@ function drawBenchCharts() {
   benchChartsDrawn = true;
   const labels = [], f1vals = [], fmrvals = [], colors = [], fmrColors = [];
   const COLORS = {
-    'ExactMatcher':'rgba(100,116,139,.6)',
-    'RuleMatcher':'rgba(100,116,139,.6)',
-    'Prototype1_Hybrid':'rgba(100,116,139,.6)',
-    'Prototype4_GeminiReAct':'rgba(59,130,246,.85)',
-    'Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'
+    'Exact':'rgba(100,116,139,.6)',
+    'Rules':'rgba(100,116,139,.6)',
+    'Rules + Gemini':'rgba(59,130,246,.85)',
+    'Rules + Gemini + Verifier':'rgba(34,197,94,.85)',
   };
   const FMR_C = {
-    'ExactMatcher':'rgba(34,197,94,.8)',
-    'RuleMatcher':'rgba(239,68,68,.7)',
-    'Prototype1_Hybrid':'rgba(239,68,68,.7)',
-    'Prototype4_GeminiReAct':'rgba(34,197,94,.8)',
-    'Prototype3_GeminiVertexAgent':'rgba(34,197,94,.8)'
+    'Exact':'rgba(34,197,94,.8)',
+    'Rules':'rgba(239,68,68,.7)',
+    'Rules + Gemini':'rgba(239,68,68,.7)',
+    'Rules + Gemini + Verifier':'rgba(34,197,94,.8)',
   };
   Object.entries(BD).forEach(([sys,m])=>{
-    const label = sys.replace('Prototype4_GeminiReAct','P4 AI Agent').replace('Prototype3_GeminiVertexAgent','P4 AI Agent').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules');
+    const label = sys;
     labels.push(label);
-    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
-    const fmr = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    const f1 = m.f1_score !== undefined ? m.f1_score : 0;
+    const fmr = m.false_match_rate !== undefined ? m.false_match_rate : 0;
     f1vals.push((f1*100).toFixed(1));
     fmrvals.push((fmr*100).toFixed(1));
     colors.push(COLORS[sys]||'rgba(59,130,246,.85)');
@@ -913,33 +908,30 @@ function drawBenchRows() {
   const tbody = document.getElementById('bench-rows');
   if (!tbody) return;
   tbody.innerHTML = '';
-  const getF1 = m => m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+  const getF1 = m => m.f1_score !== undefined ? m.f1_score : 0;
   const maxF1 = Math.max(...Object.values(BD).map(getF1));
   const SYS_DESC = {
-    'ExactMatcher':'Baseline 1 — exact reference ID lookup',
-    'RuleMatcher':'Baseline 2 — fuzzy amount + date rules',
-    'Prototype1_Hybrid':'Prototype 1 — composite similarity scoring',
-    'Prototype4_GeminiReAct':'Prototype 4 — Gemini AI + ReAct Agent',
-    'Prototype3_GeminiVertexAgent':'Prototype 4 — Gemini AI + ReAct Agent',
+    'Exact':'Baseline 1 — exact reference ID lookup',
+    'Rules':'Baseline 2 — fuzzy amount + date rules',
+    'Rules + Gemini':'Baseline 3 — fallback to LLM',
+    'Rules + Gemini + Verifier':'Prototype 4 — Gemini AI + Verifier',
   };
   Object.entries(BD).forEach(([sys,m])=>{
     const f1 = getF1(m);
     const isWin = f1===maxF1;
     const f1Pct = (f1*100).toFixed(1);
-    const fmrVal = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    const fmrVal = m.false_match_rate !== undefined ? m.false_match_rate : 0;
     const fmrPct = (fmrVal*100).toFixed(1);
-    const utilVal = m.cost_weighted_utility_mean !== undefined ? m.cost_weighted_utility_mean : (m.cost_weighted_utility !== undefined ? m.cost_weighted_utility : 0);
-    const util = utilVal.toFixed(0);
-    const ci0 = (m.f1_score_ci95 && m.f1_score_ci95.length > 0) ? (m.f1_score_ci95[0]*100).toFixed(1) : f1Pct;
-    const ci1 = (m.f1_score_ci95 && m.f1_score_ci95.length > 1) ? (m.f1_score_ci95[1]*100).toFixed(1) : f1Pct;
-    const diagVal = m.cause_diagnosis_accuracy_mean !== undefined ? m.cause_diagnosis_accuracy_mean : (m.cause_diagnosis_accuracy !== undefined ? m.cause_diagnosis_accuracy : 0);
+    const thrpt = m.throughput_tps !== undefined ? m.throughput_tps.toFixed(1) : "0";
+    const ci0 = (m.f1_ci95 && m.f1_ci95.length > 0) ? (m.f1_ci95[0]*100).toFixed(1) : f1Pct;
+    const ci1 = (m.f1_ci95 && m.f1_ci95.length > 1) ? (m.f1_ci95[1]*100).toFixed(1) : f1Pct;
+    const accVal = m.amount_weighted_accuracy !== undefined ? m.amount_weighted_accuracy : 0;
     const fmrColor = fmrVal<0.05 ? '#22c55e' : '#ef4444';
-    const utilColor = utilVal>0 ? '#22c55e' : '#ef4444';
     const row = document.createElement('div');
     row.className = 'bench-row'+(isWin?' winner':'');
     row.innerHTML = `
       <div>
-        <div class="sys-label">${sys.replace('Prototype4_GeminiReAct','P4 Gemini AI Agent').replace('Prototype3_GeminiVertexAgent','P4 Gemini AI Agent').replace('Prototype1_Hybrid','P1 Hybrid')}</div>
+        <div class="sys-label">${sys}</div>
         <div class="sys-desc">${SYS_DESC[sys]||''}</div>
         ${isWin?'<div class="winner-pill"><svg width="9" height="9" viewBox="0 0 24 24" fill="#fbbf24" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Best System</div>':''}
       </div>
@@ -957,8 +949,8 @@ function drawBenchRows() {
         </div>
         <div style="font-size:10px;color:var(--faint);margin-top:4px;">${fmrVal<0.05?'No wrong matches':'Risky'}</div>
       </div>
-      <div class="util-cell" style="color:${utilColor}">${utilVal>0?'+':''}$${util}</div>
-      <div style="font-size:13px;font-weight:700;color:var(--purple)">${(diagVal*100).toFixed(0)}%</div>
+      <div class="util-cell" style="color:var(--muted)">${thrpt} cps</div>
+      <div style="font-size:13px;font-weight:700;color:var(--purple)">${(accVal*100).toFixed(0)}%</div>
     `;
     tbody.appendChild(row);
   });

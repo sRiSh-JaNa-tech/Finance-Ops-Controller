@@ -241,8 +241,11 @@ class GeminiReconciliationClient:
                 part = res["candidates"][0]["content"]["parts"][0]
                 return part
         except Exception as e:
-            logger.warning(f"Gemini API invocation error: {e}")
             return {"error": str(e)}
+
+    async def call_gemini_api_native_async(self, messages: List[Dict[str, Any]], system_instruction: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        import asyncio
+        return await asyncio.to_thread(self.call_gemini_api_native, messages, system_instruction)
     def execute_tool(self, toolbox: InvestigationToolbox, tool_name: str, tool_args: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatches tool call to the local deterministic toolbox."""
         if tool_name == "run_financial_rules":
