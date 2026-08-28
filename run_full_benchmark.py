@@ -5,6 +5,7 @@ and exports benchmark metrics to benchmark_results.json.
 """
 
 import json
+import os
 import logging
 import argparse
 from finance_ops.ledger.journal import LedgerRepository
@@ -33,16 +34,19 @@ def run_full_benchmark():
         seeds = [42, 101, 202]
         eval_mode = "live"
         cases_per_batch = 100
+        os.environ["RUN_LIVE_LLM"] = "1"
         print_banner("LIVE GEMINI EVALUATION (300 cases)")
     elif args.mode == "live":
         seeds = [42]
         eval_mode = "live"
         cases_per_batch = 100
+        os.environ["RUN_LIVE_LLM"] = "1"
         print_banner("LIVE GEMINI EVALUATION (100 cases)")
     else:
         seeds = [42, 101, 202]
         eval_mode = "offline"
         cases_per_batch = 100
+        os.environ["RUN_LIVE_LLM"] = "0"
         print_banner("OFFLINE ARCHITECTURE TEST (No LLM Measurement)")
 
     print("[*] Architecture: Evidence-Grounded Autonomous Investigation Agent")

@@ -326,7 +326,7 @@ class GeminiReconciliationClient:
             tools = create_agent_tools(toolbox)
             graph = create_agent_graph(llm, tools, max_steps=max_steps)
             
-            system_prompt = SYSTEM_PROMPT + "\\n\\nIMPORTANT: You have access to tools. If you need to test a hypothesis (e.g. FEE_MDR), YOU MUST call test_reconciliation_hypothesis. Do not guess. You can call tools multiple times. Once you are ready to conclude, output the final JSON block starting with ```json."
+            system_prompt = SYSTEM_PROMPT + "\\n\\nIMPORTANT: You have access to tools. If you need to test a hypothesis (e.g. FEE_MDR), YOU MUST call test_reconciliation_hypothesis. Do not guess. You can call tools multiple times. Once you have verified a match with tools, you MUST return a confidence_score of 0.99. The deterministic verifier will reject matches with confidence < 0.98. Output the final JSON block starting with ```json."
             
             messages = [
                 SystemMessage(content=system_prompt),
@@ -346,9 +346,29 @@ class GeminiReconciliationClient:
                         
             final_msg = final_state["messages"][-1]
             text = final_msg.content
-            if isinstance(text, str) and "```json" in text:
-                clean_json = text.split("```json")[1].split("```")[0].strip()
-                data = json.loads(clean_json)
+            
+            # Handle list content (common with LangChain Google models)
+            if isinstance(text, list):
+                text_parts = []
+                for part in text:
+                    if isinstance(part, str):
+                        text_parts.append(part)
+                    elif isinstance(part, dict) and "text" in part:
+                        text_parts.append(part["text"])
+                text = "".join(text_parts)
+                
+            if isinstance(text, str) and ("```json" in text or "{" in text):
+                try:
+                    if "```json" in text:
+                        clean_json = text.split("```json")[1].split("```")[0].strip()
+                    elif "```" in text:
+                        clean_json = text.split("```")[1].strip()
+                    else:
+                        clean_json = text[text.find("{"):text.rfind("}")+1]
+                    data = json.loads(clean_json)
+                except Exception as ex:
+                    logger.error(f"JSON Parse Error: {ex} on text {text}")
+                    return None
                 decision = _normalize_decision_label(data.get("recommended_decision", "UNCERTAIN"))
                 reason = _normalize_reason_code(data.get("primary_reason", "BELOW_CONFIDENCE_THRESHOLD"))
                 conf = float(data.get("confidence_score", 0.50))

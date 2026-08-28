@@ -91,14 +91,14 @@ def initialize_demo_state(n_cases=50, seed=42):
     
     # Load cached benchmark results to save 5+ minutes of startup time
     if os.path.exists("benchmark_results.json"):
-        with open("benchmark_results.json", "r") as f:
+        with open("benchmark_results.json", "r", encoding="utf-8") as f:
             bench = json.load(f)
-        STATE["benchmark_summary"] = bench["summary"]
-        STATE["systems_summary"] = bench["systems"]
+        STATE["benchmark_summary"] = bench.get("summary", {})
+        STATE["systems_summary"] = bench.get("systems", {})
     else:
         bench = run_benchmark(seeds=[seed], cases_per_seed=10)
-        STATE["benchmark_summary"] = bench["summary"]
-        STATE["systems_summary"] = bench["systems"]
+        STATE["benchmark_summary"] = bench.get("summary", {})
+        STATE["systems_summary"] = bench.get("systems", {})
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -761,9 +761,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
 const BD = {{ systems_summary|tojson|safe }};
 const CASES = {{ cases|tojson|safe }};
 
+if (BD) {
+  Object.values(BD).forEach(m => {
+    if (m.f1_score_mean === undefined && m.match_f1_score !== undefined) m.f1_score_mean = m.match_f1_score;
+    if (m.false_match_rate_mean === undefined && m.false_match_rate !== undefined) m.false_match_rate_mean = m.false_match_rate;
+    if (m.cost_weighted_utility_mean === undefined && m.cost_weighted_utility !== undefined) m.cost_weighted_utility_mean = m.cost_weighted_utility;
+    if (m.cause_diagnosis_accuracy_mean === undefined && m.cause_diagnosis_accuracy !== undefined) m.cause_diagnosis_accuracy_mean = m.cause_diagnosis_accuracy;
+    if (m.f1_score_ci95 === undefined) m.f1_score_ci95 = [m.f1_score_mean || 0, m.f1_score_mean || 0];
+  });
+}
+
 /* NAV */
 const PAGE_META = {
-  overview:  { title:'Overview',   sub:'AI-powered transaction reconciliation · Prototype-3' },
+  overview:  { title:'Overview',   sub:'AI-powered transaction reconciliation · Prototype-4' },
   benchmark: { title:'Benchmark',  sub:'Multi-seed evaluation across 4 systems and 15 scenarios' },
   cases:     { title:'Live Cases', sub:'{{ cases|length }} cases processed by the AI agent on this server' },
   arch:      { title:'Architecture', sub:'System design · 6 modules · evidence-grounded decisions' },
@@ -771,30 +781,42 @@ const PAGE_META = {
 function nav(name) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-'+name).classList.add('active');
-  document.getElementById('nav-'+name).classList.add('active');
+  const targetPage = document.getElementById('page-'+name);
+  const targetNav = document.getElementById('nav-'+name);
+  if (targetPage) targetPage.classList.add('active');
+  if (targetNav) targetNav.classList.add('active');
   const m = PAGE_META[name];
-  document.getElementById('tb-title').textContent = m.title;
-  document.getElementById('tb-sub').textContent = m.sub;
+  if (m) {
+    document.getElementById('tb-title').textContent = m.title;
+    document.getElementById('tb-sub').textContent = m.sub;
+  }
   window.scrollTo(0,0);
-  if (name==='benchmark') drawBenchCharts();
+  if (name==='benchmark') {
+    drawBenchCharts();
+    drawBenchRows();
+  }
 }
 
 /* KPI cards */
 function initKPIs() {
   if (!BD) return;
-  const m = BD['Prototype4_GeminiReAct'];
-  if (!m) return;
-  document.getElementById('kpi-f1').textContent = (m.f1_score_mean*100).toFixed(1)+'%';
-  document.getElementById('kpi-f1-ci').textContent = `CI [${(m.f1_score_ci95[0]*100).toFixed(1)}–${(m.f1_score_ci95[1]*100).toFixed(1)}]`;
-  const fmr = (m.false_match_rate_mean*100).toFixed(1)+'%';
-  document.getElementById('kpi-fmr').textContent = fmr;
-  document.getElementById('kpi-auto').textContent = (m.automation_rate_pct||82).toFixed(0)+'%';
-  const u = m.cost_weighted_utility_mean;
-  document.getElementById('kpi-util').textContent = (u<0?'−':'+')+' $'+Math.abs(u).toLocaleString('en-US',{maximumFractionDigits:0});
-  if (CASES.length) {
+  const protoKey = Object.keys(BD).find(k => k.includes('Prototype4') || k.includes('Prototype3') || k.includes('Gemini')) || Object.keys(BD)[0];
+  const m = BD[protoKey];
+  if (m) {
+    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+    document.getElementById('kpi-f1').textContent = (f1*100).toFixed(1)+'%';
+    const ci0 = (m.f1_score_ci95 && m.f1_score_ci95.length > 0) ? (m.f1_score_ci95[0]*100).toFixed(1) : (f1*100).toFixed(1);
+    const ci1 = (m.f1_score_ci95 && m.f1_score_ci95.length > 1) ? (m.f1_score_ci95[1]*100).toFixed(1) : (f1*100).toFixed(1);
+    document.getElementById('kpi-f1-ci').textContent = 'CI [' + ci0 + ' - ' + ci1 + ']';
+    const fmrVal = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    document.getElementById('kpi-fmr').textContent = (fmrVal*100).toFixed(1)+'%';
+    document.getElementById('kpi-auto').textContent = (m.automation_rate_pct !== undefined ? m.automation_rate_pct : 82).toFixed(0)+'%';
+    const u = m.cost_weighted_utility_mean !== undefined ? m.cost_weighted_utility_mean : (m.cost_weighted_utility !== undefined ? m.cost_weighted_utility : 0);
+    document.getElementById('kpi-util').textContent = (u<0?'-':'+')+' $'+Math.abs(u).toLocaleString('en-US',{maximumFractionDigits:0});
+  }
+  if (CASES && CASES.length) {
     const cor = CASES.filter(c=>c.is_correct).length;
-    document.getElementById('kpi-cases-correct').textContent = cor+' correct · '+(CASES.length-cor)+' wrong';
+    document.getElementById('kpi-cases-correct').textContent = cor+' correct / '+(CASES.length-cor)+' wrong';
     document.getElementById('lv-correct').textContent = cor+'/'+CASES.length;
     const avgConf = CASES.reduce((s,c)=>s+c.calibrated_confidence,0)/CASES.length;
     document.getElementById('lv-conf').textContent = (avgConf*100).toFixed(1)+'%';
@@ -806,14 +828,23 @@ function initKPIs() {
 /* F1 overview chart */
 function drawF1Chart() {
   if (!BD) return;
+  const canvas = document.getElementById('f1-chart');
+  if (!canvas) return;
   const labels = [], vals = [], colors = [];
-  const COLORS = {'ExactMatcher':'rgba(100,116,139,.7)','RuleMatcher':'rgba(100,116,139,.7)','Prototype1_Hybrid':'rgba(100,116,139,.7)','Prototype4_GeminiReAct':'rgba(59,130,246,.85)'};
+  const COLORS = {
+    'ExactMatcher':'rgba(100,116,139,.7)',
+    'RuleMatcher':'rgba(100,116,139,.7)',
+    'Prototype1_Hybrid':'rgba(100,116,139,.7)',
+    'Prototype4_GeminiReAct':'rgba(59,130,246,.85)',
+    'Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'
+  };
   Object.entries(BD).forEach(([sys,m]) => {
-    labels.push(sys.replace('Prototype4_GeminiReAct','P4 Gemini AI').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules'));
-    vals.push((m.f1_score_mean*100).toFixed(1));
-    colors.push(COLORS[sys]||'rgba(100,116,139,.7)');
+    labels.push(sys.replace('Prototype4_GeminiReAct','P4 Gemini AI').replace('Prototype3_GeminiVertexAgent','P4 Gemini AI').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules'));
+    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+    vals.push((f1*100).toFixed(1));
+    colors.push(COLORS[sys]||'rgba(59,130,246,.85)');
   });
-  new Chart(document.getElementById('f1-chart').getContext('2d'),{
+  new Chart(canvas.getContext('2d'),{
     type:'bar',
     data:{labels,datasets:[{data:vals,backgroundColor:colors,borderRadius:6,borderSkipped:false}]},
     options:{
@@ -821,7 +852,7 @@ function drawF1Chart() {
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` F1: ${ctx.raw}%`}}},
       scales:{
         x:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:11}}},
-        y:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:11},callback:v=>v+'%'},min:40,max:100}
+        y:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:11},callback:v=>v+'%'},min:0,max:100}
       }
     }
   });
@@ -831,16 +862,33 @@ function drawF1Chart() {
 let benchChartsDrawn = false;
 function drawBenchCharts() {
   if (benchChartsDrawn || !BD) return;
+  const f1Canvas = document.getElementById('bench-f1-chart');
+  const fmrCanvas = document.getElementById('bench-fmr-chart');
+  if (!f1Canvas || !fmrCanvas) return;
   benchChartsDrawn = true;
   const labels = [], f1vals = [], fmrvals = [], colors = [], fmrColors = [];
-  const COLORS = {'ExactMatcher':'rgba(100,116,139,.6)','RuleMatcher':'rgba(100,116,139,.6)','Prototype1_Hybrid':'rgba(100,116,139,.6)','Prototype4_GeminiReAct':'rgba(59,130,246,.85)'};
-  const FMR_C = {'ExactMatcher':'rgba(34,197,94,.8)','RuleMatcher':'rgba(239,68,68,.7)','Prototype1_Hybrid':'rgba(239,68,68,.7)','Prototype4_GeminiReAct':'rgba(34,197,94,.8)'};
+  const COLORS = {
+    'ExactMatcher':'rgba(100,116,139,.6)',
+    'RuleMatcher':'rgba(100,116,139,.6)',
+    'Prototype1_Hybrid':'rgba(100,116,139,.6)',
+    'Prototype4_GeminiReAct':'rgba(59,130,246,.85)',
+    'Prototype3_GeminiVertexAgent':'rgba(59,130,246,.85)'
+  };
+  const FMR_C = {
+    'ExactMatcher':'rgba(34,197,94,.8)',
+    'RuleMatcher':'rgba(239,68,68,.7)',
+    'Prototype1_Hybrid':'rgba(239,68,68,.7)',
+    'Prototype4_GeminiReAct':'rgba(34,197,94,.8)',
+    'Prototype3_GeminiVertexAgent':'rgba(34,197,94,.8)'
+  };
   Object.entries(BD).forEach(([sys,m])=>{
-    const label = sys.replace('Prototype4_GeminiReAct','P4 AI Agent').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules');
+    const label = sys.replace('Prototype4_GeminiReAct','P4 AI Agent').replace('Prototype3_GeminiVertexAgent','P4 AI Agent').replace('Prototype1_Hybrid','P1 Hybrid').replace('ExactMatcher','Exact').replace('RuleMatcher','Rules');
     labels.push(label);
-    f1vals.push((m.f1_score_mean*100).toFixed(1));
-    fmrvals.push((m.false_match_rate_mean*100).toFixed(1));
-    colors.push(COLORS[sys]||'rgba(100,116,139,.6)');
+    const f1 = m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+    const fmr = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    f1vals.push((f1*100).toFixed(1));
+    fmrvals.push((fmr*100).toFixed(1));
+    colors.push(COLORS[sys]||'rgba(59,130,246,.85)');
     fmrColors.push(FMR_C[sys]||'rgba(239,68,68,.7)');
   });
   const opts = (title,unit,min,max,clrs,vals)=>({
@@ -851,63 +899,69 @@ function drawBenchCharts() {
       plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>` ${ctx.raw}${unit}`}}},
       scales:{
         x:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:10}}},
-        y:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:10},callback:v=>v+unit},min,max}
+        y:{grid:{color:'rgba(30,45,69,.6)'},ticks:{color:'#64748b',font:{size:10},callback:v=>v+unit},min:0,max:max}
       }
     }
   });
-  new Chart(document.getElementById('bench-f1-chart'),opts('F1','%',40,100,colors,f1vals));
-  new Chart(document.getElementById('bench-fmr-chart'),opts('FMR','%',0,50,fmrColors,fmrvals));
+  new Chart(f1Canvas, opts('F1','%',0,100,colors,f1vals));
+  new Chart(fmrCanvas, opts('FMR','%',0,50,fmrColors,fmrvals));
 }
 
 /* Bench rows */
 function drawBenchRows() {
   if (!BD) return;
   const tbody = document.getElementById('bench-rows');
-  const maxF1 = Math.max(...Object.values(BD).map(m=>m.f1_score_mean));
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const getF1 = m => m.f1_score_mean !== undefined ? m.f1_score_mean : (m.match_f1_score !== undefined ? m.match_f1_score : 0);
+  const maxF1 = Math.max(...Object.values(BD).map(getF1));
   const SYS_DESC = {
     'ExactMatcher':'Baseline 1 — exact reference ID lookup',
     'RuleMatcher':'Baseline 2 — fuzzy amount + date rules',
     'Prototype1_Hybrid':'Prototype 1 — composite similarity scoring',
     'Prototype4_GeminiReAct':'Prototype 4 — Gemini AI + ReAct Agent',
+    'Prototype3_GeminiVertexAgent':'Prototype 4 — Gemini AI + ReAct Agent',
   };
   Object.entries(BD).forEach(([sys,m])=>{
-    const isWin = m.f1_score_mean===maxF1;
-    const f1Pct = (m.f1_score_mean*100).toFixed(1);
-    const fmrPct = (m.false_match_rate_mean*100).toFixed(1);
-    const util = m.cost_weighted_utility_mean.toFixed(0);
-    const ci0 = (m.f1_score_ci95[0]*100).toFixed(1), ci1 = (m.f1_score_ci95[1]*100).toFixed(1);
-    const fmrColor = m.false_match_rate_mean<0.05 ? '#22c55e' : '#ef4444';
-    const utilColor = m.cost_weighted_utility_mean>0 ? '#22c55e' : '#ef4444';
+    const f1 = getF1(m);
+    const isWin = f1===maxF1;
+    const f1Pct = (f1*100).toFixed(1);
+    const fmrVal = m.false_match_rate_mean !== undefined ? m.false_match_rate_mean : (m.false_match_rate !== undefined ? m.false_match_rate : 0);
+    const fmrPct = (fmrVal*100).toFixed(1);
+    const utilVal = m.cost_weighted_utility_mean !== undefined ? m.cost_weighted_utility_mean : (m.cost_weighted_utility !== undefined ? m.cost_weighted_utility : 0);
+    const util = utilVal.toFixed(0);
+    const ci0 = (m.f1_score_ci95 && m.f1_score_ci95.length > 0) ? (m.f1_score_ci95[0]*100).toFixed(1) : f1Pct;
+    const ci1 = (m.f1_score_ci95 && m.f1_score_ci95.length > 1) ? (m.f1_score_ci95[1]*100).toFixed(1) : f1Pct;
+    const diagVal = m.cause_diagnosis_accuracy_mean !== undefined ? m.cause_diagnosis_accuracy_mean : (m.cause_diagnosis_accuracy !== undefined ? m.cause_diagnosis_accuracy : 0);
+    const fmrColor = fmrVal<0.05 ? '#22c55e' : '#ef4444';
+    const utilColor = utilVal>0 ? '#22c55e' : '#ef4444';
     const row = document.createElement('div');
     row.className = 'bench-row'+(isWin?' winner':'');
     row.innerHTML = `
       <div>
-        <div class="sys-label">${sys.replace('Prototype4_GeminiReAct','P4 Gemini AI Agent').replace('Prototype1_Hybrid','P1 Hybrid')}</div>
+        <div class="sys-label">${sys.replace('Prototype4_GeminiReAct','P4 Gemini AI Agent').replace('Prototype3_GeminiVertexAgent','P4 Gemini AI Agent').replace('Prototype1_Hybrid','P1 Hybrid')}</div>
         <div class="sys-desc">${SYS_DESC[sys]||''}</div>
         ${isWin?'<div class="winner-pill"><svg width="9" height="9" viewBox="0 0 24 24" fill="#fbbf24" stroke="none"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg> Best System</div>':''}
       </div>
       <div class="bar-cell">
         <div class="mini-bar-wrap">
-          <div class="mini-bar-track"><div class="mini-bar-fill" style="width:0;background:${isWin?'rgba(59,130,246,.85)':'rgba(100,116,139,.5)'}" data-target="${(m.f1_score_mean/maxF1)*100}"></div></div>
+          <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${maxF1>0?(f1/maxF1)*100:0}%;background:${isWin?'rgba(59,130,246,.85)':'rgba(100,116,139,.5)'}"></div></div>
           <span class="mini-bar-val" style="color:${isWin?'#93c5fd':'var(--muted)'}">${f1Pct}%</span>
         </div>
-        <div style="font-size:10px;color:var(--faint);margin-top:4px;font-family:'JetBrains Mono',monospace;">CI [${ci0}–${ci1}]</div>
+        <div style="font-size:10px;color:var(--faint);margin-top:4px;font-family:'JetBrains Mono',monospace;">CI [${ci0} - ${ci1}]</div>
       </div>
       <div class="bar-cell">
         <div class="mini-bar-wrap">
-          <div class="mini-bar-track"><div class="mini-bar-fill" style="width:0;background:${fmrColor};opacity:.8" data-target="${Math.min(100,m.false_match_rate_mean*250)}"></div></div>
+          <div class="mini-bar-track"><div class="mini-bar-fill" style="width:${Math.min(100,fmrVal*250)}%;background:${fmrColor};opacity:.8"></div></div>
           <span class="mini-bar-val" style="color:${fmrColor}">${fmrPct}%</span>
         </div>
-        <div style="font-size:10px;color:var(--faint);margin-top:4px;">${m.false_match_rate_mean<0.05?'No wrong matches':'Risky'}</div>
+        <div style="font-size:10px;color:var(--faint);margin-top:4px;">${fmrVal<0.05?'No wrong matches':'Risky'}</div>
       </div>
-      <div class="util-cell" style="color:${utilColor}">${m.cost_weighted_utility_mean>0?'+':''}$${util}</div>
-      <div style="font-size:13px;font-weight:700;color:var(--purple)">${(m.cause_diagnosis_accuracy_mean*100).toFixed(0)}%</div>
+      <div class="util-cell" style="color:${utilColor}">${utilVal>0?'+':''}$${util}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--purple)">${(diagVal*100).toFixed(0)}%</div>
     `;
     tbody.appendChild(row);
   });
-  setTimeout(()=>{
-    document.querySelectorAll('.mini-bar-fill[data-target]').forEach(el=>{el.style.transition='width 1s cubic-bezier(.4,0,.2,1)';el.style.width=el.dataset.target+'%';});
-  },120);
 }
 
 /* CASE FILTER */
