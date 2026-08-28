@@ -75,9 +75,14 @@ Prototype4_GeminiReAct   | 80.0%      | 91.2%      | 0.0%           | 57.0%     
 
 [METRIC: Throughput] Processing 100 cases at 2364.64 cases/sec (p95 latency: 0.61 ms)
 
-Ledger:
-  Debit = Credit: INR 301,093.14 = INR 301,093.14
-  Unbalanced entries: 0
+LEDGER & CASH POSITION:
+  [+] Trial Balance: Debit = Credit = INR 301,093.14 (Unbalanced: 0)
+  [+] Total Liquidity: INR 110,378.47
+      - Cash at Bank: INR 110,323.02
+      - Unmatched Suspense: INR 190,406.64
+  [+] 30-Day Forward Forecast:
+      - Expected Cash Inflow (75% clearance): INR 142,804.98
+      - Write-off Risk (25% aging): INR 47,601.66
 
 
 EXCEPTIONS:

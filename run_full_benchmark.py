@@ -71,10 +71,18 @@ def run_full_benchmark():
     
     print(f"\n[METRIC: Throughput] Processing {cases_per_batch} cases at {p3_stats.get('throughput_cases_per_sec', 0):.2f} cases/sec (p95 latency: {p3_stats.get('p95_latency_ms', 0)} ms)")
 
-    print(f"\nLedger:")
+    print(f"\nLEDGER & CASH POSITION:")
     tb = ledger_repo.trial_balance()
-    print(f"  Debit = Credit: INR {tb['total_debits_paise']/100:,.2f} = INR {tb['total_credits_paise']/100:,.2f}")
-    print(f"  Unbalanced entries: {tb['difference_paise']}")
+    cp = ledger_repo.generate_cash_position_report()
+    fc = ledger_repo.generate_forward_forecast(days=30)
+    
+    print(f"  [+] Trial Balance: Debit = Credit = INR {tb['total_debits_paise']/100:,.2f} (Unbalanced: {tb['difference_paise']})")
+    print(f"  [+] Total Liquidity: INR {cp['total_liquidity_inr']:,.2f}")
+    print(f"      - Cash at Bank: INR {cp['cash_at_bank_inr']:,.2f}")
+    print(f"      - Unmatched Suspense: INR {cp['unmatched_suspense_inr']:,.2f}")
+    print(f"  [+] 30-Day Forward Forecast:")
+    print(f"      - Expected Cash Inflow (75% clearance): INR {fc['expected_inflow_inr']:,.2f}")
+    print(f"      - Write-off Risk (25% aging): INR {fc['write_off_risk_inr']:,.2f}")
     print("")
 
     print(f"\nEXCEPTIONS:")

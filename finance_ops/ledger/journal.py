@@ -282,3 +282,31 @@ class LedgerRepository:
             "difference_paise": total_debits - total_credits,
             "entry_count": len(self.entries)
         }
+
+    def generate_cash_position_report(self) -> Dict[str, Any]:
+        """Calculates current liquidity and cash positioning from ledger accounts."""
+        cash_settled = self.accounts.get(ChartOfAccounts.CASH_AT_BANK, 0)
+        unmatched_suspense = self.accounts.get(ChartOfAccounts.DISPUTED_SETTLEMENT_SUSPENSE, 0)
+        fees_paid = self.accounts.get(ChartOfAccounts.MERCHANT_PROCESSING_FEE_EXPENSE, 0)
+        gst_credit = self.accounts.get(ChartOfAccounts.GST_INPUT_TAX_RECEIVABLE, 0)
+        
+        return {
+            "cash_at_bank_inr": cash_settled / 100.0,
+            "unmatched_suspense_inr": unmatched_suspense / 100.0,
+            "processing_fees_inr": fees_paid / 100.0,
+            "gst_input_credit_inr": gst_credit / 100.0,
+            "total_liquidity_inr": (cash_settled + gst_credit) / 100.0
+        }
+
+    def generate_forward_forecast(self, days: int = 30) -> Dict[str, Any]:
+        """Forecasts expected cash flow from unmatched suspense clearing."""
+        unmatched_suspense = self.accounts.get(ChartOfAccounts.DISPUTED_SETTLEMENT_SUSPENSE, 0)
+        # Simple deterministic forecast: assume 75% of suspense clears within `days` timeframe
+        expected_recovery = int(unmatched_suspense * 0.75)
+        write_off_risk = unmatched_suspense - expected_recovery
+        
+        return {
+            "forecast_days": days,
+            "expected_inflow_inr": expected_recovery / 100.0,
+            "write_off_risk_inr": write_off_risk / 100.0,
+        }
