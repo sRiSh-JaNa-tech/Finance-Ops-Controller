@@ -18,8 +18,6 @@ from finance_ops.core.models import DecisionLabel
 
 MODEL_PRICING = {
     "gemini-2.5-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
-    "gemini-1.5-flash-lite": {"input": 0.075 / 1e6, "output": 0.30 / 1e6},
-    "gemini-1.5-pro": {"input": 1.25 / 1e6, "output": 5.00 / 1e6},
 }
 
 class FinancialReconciliationMetrics:

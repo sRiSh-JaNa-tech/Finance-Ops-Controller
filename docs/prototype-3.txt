@@ -343,7 +343,7 @@ Before invoking LLM API calls, the system executes deterministic fast-path gatin
 
 7.2 Gemini Vertex AI Integration Specs
   - SDK Support: Google Cloud Vertex AI (`google.cloud.aiplatform` / `vertexai`) & `google-genai`.
-  - Model Targets: `gemini-2.5-flash-lite` (default), `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`.
+  - Model Targets: `gemini-2.5-flash-lite` (default and only supported).
   - API Credentials: Application Default Credentials (ADC), `GOOGLE_APPLICATION_CREDENTIALS`,
     or `GEMINI_API_KEY` / `VERTEX_API_KEY`.
   - Offline Mode: Automatic deterministic fallback investigator when offline.
