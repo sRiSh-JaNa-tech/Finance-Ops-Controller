@@ -289,3 +289,60 @@ def bootstrap_confidence_interval(
     low = float(np.percentile(boot_means, 100 * (alpha / 2.0)))
     high = float(np.percentile(boot_means, 100 * (1.0 - alpha / 2.0)))
     return mean_val, low, high
+
+
+def compute_selective_prediction_curve(
+    predictions: List[Dict[str, Any]],
+    ground_truth: List[Dict[str, Any]],
+    thresholds: Optional[List[float]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Computes the Selective Prediction Frontier:
+    Automation Coverage vs False Match Rate across confidence thresholds.
+    """
+    if thresholds is None:
+        thresholds = [0.70, 0.80, 0.85, 0.90, 0.95, 0.98]
+        
+    curve = []
+    total_cases = len(ground_truth)
+    if total_cases == 0:
+        return curve
+
+    for tau in thresholds:
+        auto_count = 0
+        match_tp = 0
+        match_fp = 0
+        
+        for pred, gt in zip(predictions, ground_truth):
+            conf = pred.get("confidence_score", 1.0)
+            p_dec = pred.get("decision")
+            g_dec = gt.get("expected_decision")
+            if hasattr(p_dec, "value"): p_dec = p_dec.value
+            if hasattr(g_dec, "value"): g_dec = g_dec.value
+
+            # If confidence is below threshold, escalate to UNCERTAIN (no automation)
+            effective_dec = p_dec if conf >= tau else DecisionLabel.UNCERTAIN.value
+
+            if effective_dec != DecisionLabel.UNCERTAIN.value:
+                auto_count += 1
+                if effective_dec == DecisionLabel.MATCHED.value:
+                    p_target = set(pred.get("matched_record_ids", []))
+                    g_target = set(gt.get("target_record_ids", gt.get("candidate_tx_ids", [])))
+                    if g_dec == DecisionLabel.MATCHED.value and (not g_target or (p_target and p_target.intersection(g_target))):
+                        match_tp += 1
+                    else:
+                        match_fp += 1
+
+        auto_rate = auto_count / total_cases
+        fmr = match_fp / (match_tp + match_fp) if (match_tp + match_fp) > 0 else 0.0
+        
+        curve.append({
+            "threshold": tau,
+            "automation_rate": round(auto_rate, 4),
+            "false_match_rate": round(fmr, 4),
+            "total_automated": auto_count,
+            "false_matches": match_fp
+        })
+        
+    return curve
+
